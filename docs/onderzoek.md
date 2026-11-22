@@ -416,7 +416,7 @@ Verdere keuzes:
 | Tests | Een nagebootste luchtreiniger op 127.0.0.1 die elk bekend firmwaretrekje kan vertonen; elk trekje wordt een regressietest |
 | Controle bij elke wijziging | hassfest, de HACS-validatie, ruff, mypy, en tests tegen de minimale, de huidige en de bètaversie van Home Assistant |
 | Distributie | Een GitHub-release per versie en een installatielink in de README; na de eerste stabiele versie aanmelden voor de catalogus |
-| Domeinnaam | Vrij in de kern en in de catalogus zijn onder meer `philips_pureprotect` en `philips_air_local`. De keuze is definitief. |
+| Domeinnaam | `philips_pureprotect` (besloten; vrij in de kern en in de catalogus op 22 november 2026) |
 
 ### 6.8 Wat we bewust niet doen
 
@@ -556,11 +556,16 @@ Het programma voert deze reeks uit:
 - Nederlandse gebruikerservaringen op Tweakers; die site was voor geen enkel hulpmiddel leesbaar.
 - De betekenis van de sleutels `D03106`, `D0311F`, `D03136`, `D0313B`, `D03182`, `D03R81`, `D05102` en de `D011xx`-reeks.
 
+**Genomen beslissingen:**
+
+| Beslissing | Keuze | Datum |
+|---|---|---|
+| Domeinnaam | `philips_pureprotect`, met weergavenaam "Philips PureProtect". Het domein is definitief; de weergavenaam kan later nog wijzigen. | 22 november 2026 |
+
 **Beslissingen voor jou:**
 
 | Beslissing | Opties | Mijn voorkeur |
 |---|---|---|
-| Domeinnaam | `philips_pureprotect`, `philips_air_local`, andere | `philips_pureprotect` |
 | Reikwijdte | Alleen de 3200-serie, of ook de verwante 2200- en 4200-serie | Beginnen met de 3200-serie; de modeltabel zo opzetten dat de andere erbij kunnen |
 | Minimale Home Assistant-versie | 2026.11.0 of nieuwer | 2026.11.0, tenzij jouw installatie ouder is en niet kan worden bijgewerkt |
 
