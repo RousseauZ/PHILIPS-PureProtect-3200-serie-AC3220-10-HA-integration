@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from airlink import Diagnostics, RestoredState, Session, SessionOptions, SessionState
+from airlink.coap import Message
 from airlink.transport import Transport
 
 if TYPE_CHECKING:
@@ -178,7 +179,7 @@ def test_offline_needs_the_other_kind_of_probe_to_fail_too(bench: Bench) -> None
         at_sync: list[Diagnostics] = []
         handle_sync = fake._handle_sync
 
-        def recording_sync(msg, sender) -> None:  # noqa: ANN001
+        def recording_sync(msg: Message, sender: tuple[str, int]) -> None:
             at_sync.append(session.diagnostics())
             handle_sync(msg, sender)
 
@@ -209,7 +210,7 @@ def test_frames_keep_the_session_live_while_probes_fail(bench: Bench) -> None:
         for value in range(100, 108):
             await asyncio.sleep(0.15)
             fake.change("D03221", value)
-            await bench.until(lambda value=value: session.status is not None and session.status["D03221"] == value)
+            await bench.until(lambda: session.status is not None and session.status["D03221"] == fake.state["D03221"])
             assert session.state is LIVE
         diag = session.diagnostics()
         assert diag.probes_missed >= 8, "the probes were supposed to fail"

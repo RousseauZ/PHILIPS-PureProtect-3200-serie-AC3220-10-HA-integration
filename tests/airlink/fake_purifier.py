@@ -1,9 +1,25 @@
 """A simulated purifier on a local UDP port, for tests.
 
 The defaults follow what was measured on a real AC3220/10 with firmware
-0.2.3 and Wi-Fi ``AWS_Philips_AIR_Combo@86`` (docs/metingen.md). Every quirk
-of other firmware that the research found is a switch, so that each one can
-be exercised without hardware.
+0.2.3 and Wi-Fi ``AWS_Philips_AIR_Combo@86`` (docs/metingen.md, measurements
+1 to 6). Every quirk of other firmware that the research found is a switch,
+so that each one can be exercised without hardware.
+
+Measured and simulated by default:
+
+* a registration is answered only by the next change;
+* in standby nothing is sent, unless the power key itself changes;
+* settings written in standby are acknowledged and discarded, and a write of
+  ``D03102`` = 0 in standby is acknowledged without any frame;
+* with the device on, every accepted write is followed by a frame, also a
+  write of the value it already has;
+* the mode reads -16 while off, and after a mode change the real fan speed
+  follows in a frame of its own;
+* every sync returns a new random counter, and a write is accepted only with
+  that counter plus one.
+
+Not measured, so a guess: read-only keys behave like a same-value write, and
+a write that switches the device on applies the other keys in that message.
 """
 
 from __future__ import annotations
@@ -95,6 +111,9 @@ class FakePurifier(asyncio.DatagramProtocol):
         self.standby_silent = True  # no frames while off, except for the power key
         self.standby_discards_settings = True  # acknowledged, not applied
         self.push_on_same_value = True  # a write of the current value still notifies
+        # After a mode change the fan speed follows in a frame of its own
+        # (measured: 0.1 to 1 s later); None puts it in the same frame.
+        self.speed_follows_after: float | None = 0.03
 
         # -- quirks found by the research ---------------------------------
         self.lapse_after: float | None = None  # observer expires unless re-registered
@@ -188,6 +207,8 @@ class FakePurifier(asyncio.DatagramProtocol):
                 self._notify(status_type)
             return
         self.state[key] = value
+        if key == MODE:
+            self._speed_follows(value)
         if self.is_on or not self.standby_silent:
             self._notify(status_type)
 
@@ -208,7 +229,9 @@ class FakePurifier(asyncio.DatagramProtocol):
         self._boot = time.monotonic()
         self._observe_seq = 1
 
-    def push(self, *, status_type: str = "status", runtime_shift_ms: int = 0, state: dict[str, Any] | None = None) -> None:
+    def push(
+        self, *, status_type: str = "status", runtime_shift_ms: int = 0, state: dict[str, Any] | None = None
+    ) -> None:
         """Send a frame to every observer now, whatever the standby rule says."""
         for observer in list(self.observers):
             self._send_frame(observer, status_type, state=state, runtime_shift_ms=runtime_shift_ms)
@@ -394,7 +417,7 @@ class FakePurifier(asyncio.DatagramProtocol):
                 self.state[key] = value
                 changed = True
                 if key == MODE:
-                    self.state["D0310D"] = _SPEED_OF_MODE.get(value, 1)
+                    self._speed_follows(value)
         answer("success")
         if power_changed:
             notify = True
@@ -423,11 +446,27 @@ class FakePurifier(asyncio.DatagramProtocol):
             self.state[MODE] = self._mode_before_standby
             self.state["D0310D"] = _SPEED_OF_MODE.get(self._mode_before_standby, 1)
         else:
-            # Measured: the mode reads -16 while the device is off.
+            # Measured: off reads as mode -16 and speed 0, and ends the timer.
             self._mode_before_standby = self.state[MODE]
             self.state[MODE] = MODE_WHILE_OFF
             self.state["D0310D"] = 0
+            self.state["D03110"] = 0
+            self.state["D03211"] = 0
         return True
+
+    def _speed_follows(self, mode: int) -> None:
+        """Let the real fan speed follow a mode change."""
+        speed = _SPEED_OF_MODE.get(mode, 1)
+        if self.speed_follows_after is None:
+            self.state["D0310D"] = speed
+            return
+
+        def arrive() -> None:
+            if self.is_on and self.state[MODE] == mode and self.state["D0310D"] != speed:
+                self.state["D0310D"] = speed
+                self._notify("status")
+
+        self._timers.append(asyncio.get_running_loop().call_later(self.speed_follows_after, arrive))
 
     # -- notifications -----------------------------------------------------
 

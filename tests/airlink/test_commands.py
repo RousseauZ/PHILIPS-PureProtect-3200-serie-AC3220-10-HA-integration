@@ -39,8 +39,11 @@ def test_write_is_confirmed_by_the_status_frame(bench: Bench) -> None:
         session = await bench.live(options=bench.quiet)
         result = await session.write({"D0310C": 18})
         assert fake.state["D0310C"] == 18
-        assert session.status is not None and session.status["D0310C"] == 18 and session.status["D0310D"] == 18
+        assert session.status is not None and session.status["D0310C"] == 18
         assert result.values == {"D0310C": 18} and not result.already_current and not result.resent
+        # The fan speed follows in a frame of its own; the write did not wait for it.
+        assert session.status["D0310D"] == 1
+        await bench.until(lambda: session.status is not None and session.status["D0310D"] == 18)
         assert result.attempts == 1 and result.duration < 1.0
         # One sync right before the write, and the counter of that sync plus one.
         assert exchanges(bench) == [SYNC, CONTROL] and fake.controls == [{"D0310C": 18}]
@@ -137,10 +140,18 @@ def test_device_off_follows_the_live_status(bench: Bench) -> None:
     async def body() -> None:
         fake = bench.fake
         session = await bench.live(options=bench.quiet)
-        await session.write({"D03102": 0})
-        assert not fake.is_on and session.status is not None and session.status["D0310C"] == -16
+        # Measured: switching off over the network is reported within 0.1 s.
+        result = await session.write({"D03102": 0})
+        assert not result.resent and not fake.is_on
+        assert session.status is not None and session.status["D0310C"] == -16
         with pytest.raises(DeviceOffError):
             await session.write({"D0310C": 18})
+        # Off once more: nothing to send. The device would answer "success"
+        # and stay silent (measured), which could never be confirmed.
+        controls = len(fake.controls)
+        with pytest.raises(DeviceOffError):
+            await session.write({"D03102": 0})
+        assert len(fake.controls) == controls
         await session.write({"D03102": 1})
         await session.write({"D0310C": 18})
         assert fake.state["D0310C"] == 18
@@ -240,7 +251,6 @@ def test_refused_attempt_is_retried_with_a_new_sync_and_payload(bench: Bench) ->
 
 def test_refused_after_all_attempts(bench: Bench) -> None:
     async def body() -> None:
-        fake = bench.fake
         session = await bench.live(options=bench.quiet)
         with pytest.raises(RefusedError) as caught:
             await session.write({"D03103": 1})
@@ -315,9 +325,11 @@ def test_only_integers_are_written(bench: Bench) -> None:
         for bad in ({"D03103": "1"}, {"D03103": True}, {"D03103": 1.0}):
             with pytest.raises(TypeError):
                 await session.write(bad)  # type: ignore[arg-type]
-        for bad in ({}, {"DeviceId": 1}, {"": 1}):
-            with pytest.raises(ValueError):
-                await session.write(bad)
+        with pytest.raises(ValueError, match="nothing to write"):
+            await session.write({})
+        for reserved in ({"DeviceId": 1}, {"": 1}):
+            with pytest.raises(ValueError, match="not a writable key"):
+                await session.write(reserved)
         assert not bench.fake.controls and session.diagnostics().commands_sent == 0
 
     bench.run(body)

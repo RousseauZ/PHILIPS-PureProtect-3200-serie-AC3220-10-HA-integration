@@ -119,6 +119,52 @@ Niet veranderd tijdens de rondgang: `D0312A`, `D0312B`, `D0312C`, `D03106`, `D03
 | Meldingen en weekschema wijzigen in de app | Lokaal veranderde er niets |
 | `D0311F` | Werd weer 1, nu op hetzelfde moment als een wijziging van het display, en bleef 1 bij verder schakelen. Hangt dus niet aan het display. Twee verklaringen passen: ongeveer twee minuten na het aanzetten, of een halve minuut op het hoogste toerental |
 
+### Meting 8: `refresh`, apparaat aan
+
+| Onderwerp | Uitkomst |
+|---|---|
+| Eerste statusbericht na een nieuw abonnement | Na 0,2 s |
+| Vernieuwen met hetzelfde kenmerk | De ene vernieuwing die te beoordelen was (het was stil vlak ervoor) kreeg geen antwoord binnen 1,5 s. Twee waren niet te beoordelen. |
+| Na een verandering | 5 berichten, geen dubbele |
+| Abonneren met een nieuw kenmerk vanaf dezelfde poort | Daarna 0 berichten op het oude kenmerk en 4 op het nieuwe: het nieuwe abonnement vervangt het oude |
+
+### Meting 9: `second-client`, twee clients vanaf dezelfde computer
+
+| Onderwerp | Uitkomst |
+|---|---|
+| Client B abonneert vanaf een andere poort | Daarna ontvangt A niets meer en B alles: de nieuwste abonnee verdringt de oudste |
+| Verzonnen teller | `failed`: het apparaat controleert de teller |
+| A synct, B synct, A schrijft, B schrijft | A `failed`, B `success`: de laatste sync bepaalt de geldige teller voor alle clients vanaf dit adres |
+
+### Meting 10: `deregister`
+
+| Onderwerp | Uitkomst |
+|---|---|
+| Afmelden (Observe 1) | Niet gerespecteerd: er kwamen nog 4 berichten |
+| Een statusbericht beantwoorden met een reset | Niet gerespecteerd: er kwamen nog 2 berichten |
+
+### Meting 11: `discover`
+
+Vijf rondes; per ronde gingen vier info-aanvragen tegelijk uit.
+
+| Doel | Beantwoord door de luchtreiniger |
+|---|---|
+| Broadcast 255.255.255.255 | 2 van 5 |
+| Broadcast van het subnet | 2 van 5 |
+| Multicast 224.0.1.187 | 0 van 5 |
+| Rechtstreeks | 3 van 5 |
+
+Een ander apparaat in het netwerk (10.10.10.68) antwoordde ook op de broadcast en de multicast, met een antwoord zonder `modelid`, `type` of `device_id`.
+
+### Eerste statusbericht na een nieuw abonnement, over alle metingen
+
+| Toestand | Tijd tot het eerste bericht |
+|---|---|
+| Aan (zes metingen) | 0,2 s, 0,8 s, 1,2 s, 1,4 s, 1,9 s en 1,9 s |
+| Stand-by (twee metingen) | Geen bericht in 70 s; geen bericht tot het apparaat werd aangezet |
+
+Zes keer binnen twee seconden is geen toeval: met het apparaat aan beantwoordt het een nieuw abonnement vanaf een nieuwe poort binnen ongeveer twee seconden. In stand-by niet.
+
 ## Wat dit vastlegt
 
 | Bevinding | Gevolg voor het ontwerp |
@@ -133,6 +179,13 @@ Niet veranderd tijdens de rondgang: `D0312A`, `D0312B`, `D0312C`, `D03106`, `D03
 | De info-aanvraag is traag (ongeveer een halve seconde) en miste één keer | Geschikt voor herkenning, minder voor een frequente bereikbaarheidscontrole. Ping en sync zijn sneller. |
 | Verzoeken met ontvangstbevestiging worden beantwoord | Commando's kunnen met ontvangstbevestiging worden gestuurd, wat verlies op netwerkniveau zichtbaar maakt |
 | De status komt gefragmenteerd aan | Fragmenten moeten tussen Home Assistant en het apparaat worden doorgelaten |
+| Het apparaat bedient één abonnee per adres; de nieuwste aanvraag wint | De integratie opent nooit een tweede abonnement. Elk ander programma dat vanaf de Home Assistant-computer abonneert (een oude integratie, een test op de opdrachtregel) neemt de stroom over. De periodieke vernieuwing haalt hem dan terug. |
+| Een nieuw kenmerk vervangt het oude direct | Overstappen op een nieuw kenmerk kan zonder overgangsperiode |
+| Afmelden en een reset worden genegeerd | Bij het stoppen valt er niets af te melden. Het apparaat blijft naar de laatste abonnee sturen tot een nieuwe zich meldt; dat is onschadelijk. |
+| Clients vanaf hetzelfde adres delen één teller; de laatste sync telt | Bevestigt: sync direct vóór elk commando, onder één slot. Een sync als bereikbaarheidscontrole kan de teller van een andere client ongeldig maken; de ping heeft dat nadeel niet. |
+| Met het apparaat aan beantwoordt het een nieuw abonnement binnen ongeveer 2 s; een vernieuwing met hetzelfde kenmerk niet | Bij het opstarten van Home Assistant komt de status vanzelf binnen als het apparaat aan staat. Vernieuwen met hetzelfde kenmerk is alleen een vangnet en levert zelf geen status op. |
+| De info-aanvraag wordt vaak niet beantwoord, zeker bij meerdere tegelijk (7 van 15) | Herkenning vraagt drie tot vijf pogingen, één tegelijk, met een seconde ertussen |
+| Het apparaat is vindbaar via broadcast, niet via multicast; een ander apparaat in het netwerk antwoordt ook op poort 5683 | Automatisch zoeken via broadcast met herhalingen. Elk antwoord streng controleren op `device_id`, `product_id` en een bekend model. |
 
 ## Functiedekking
 
@@ -172,10 +225,7 @@ Sleutels zonder bekende betekenis: `D03106`, `D0311F`, `D03136`, `D0313B`, `D031
 | Blijft een abonnement ook leveren na lange stilte in stand-by? | `lapse` in stand-by, met de aan/uit-knop als verandering |
 | Welke schrijfopdrachten werken, ook de combinaties die de app voor het licht gebruikt? | `write-matrix` |
 | Zijn de filtertellers lokaal te schrijven? | Met het apparaat aan `set D0520D=719`, daarna `set D0520D=720` |
-| Hoe vernieuw je een abonnement, en met welk kenmerk? | `refresh` |
 | Welke controle blijft antwoorden gedurende uren stilte? | `liveness` in stand-by |
-| Eén of meer abonnees per adres; gedeelde teller? | `second-client` |
-| Wordt afmelden gerespecteerd? | `deregister` |
+| Bedient het apparaat abonnees vanaf verschillende adressen tegelijk? | `observe` op twee computers tegelijk |
 | Gedrag na een stroomonderbreking | `power-cycle` |
 | Storen de app en een lokale client elkaar? | Tijdens de rondgang niet; `app` test daarnaast of onze controles de app hinderen |
-| Vindbaar via broadcast of multicast? | `discover` |

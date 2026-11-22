@@ -10,16 +10,17 @@ from typing import TYPE_CHECKING
 import pytest
 from airlink.coap import CONTENT, EMPTY, GET, POST, Message, MType, build_request
 from airlink.errors import TransportError
+from airlink.transport import Transport
 
 if TYPE_CHECKING:
     from conftest import Bench
 
 
-def info_request(transport, *, mtype: MType = MType.NON) -> Message:
+def info_request(transport: Transport, *, mtype: MType = MType.NON) -> Message:
     return build_request(mtype, GET, transport.next_mid(), transport.new_token(), "/sys/dev/info")
 
 
-def register(transport, token: bytes) -> None:
+def register(transport: Transport, token: bytes) -> None:
     transport.send(build_request(MType.NON, GET, transport.next_mid(), token, "/sys/dev/status", observe=0))
 
 
@@ -28,9 +29,10 @@ def test_request_is_matched_by_token(bench: Bench) -> None:
         transport = bench.transport()
         await transport.open()
         first, second = info_request(transport), info_request(transport)
-        replies = await asyncio.gather(transport.request(first, 1.0), transport.request(second, 1.0))
-        assert [reply.token for reply in replies] == [first.token, second.token]
-        assert all(reply.code == CONTENT and b"AC3220/10" in reply.payload for reply in replies)
+        one, two = await asyncio.gather(transport.request(first, 1.0), transport.request(second, 1.0))
+        assert one is not None and two is not None
+        assert (one.token, two.token) == (first.token, second.token)
+        assert all(reply.code == CONTENT and b"AC3220/10" in reply.payload for reply in (one, two))
         assert transport.counters.sent == 2 and transport.counters.received == 2
 
     bench.run(body)

@@ -438,6 +438,7 @@ class Session:
             return
         self._started = True
         self._started_wall = time.time()
+        # One token for the whole session (rule 5), unless rule 6 replaces it.
         observation = _Observation(self._transport.new_token(), RefreshMode.SAME_TOKEN, time.monotonic())
         self._observations.append(observation)
         self._transport.add_stream(observation.token, functools.partial(self._handle_stream, observation))
@@ -447,6 +448,12 @@ class Session:
             await self._ensure_socket()
         except SessionStoppedError:
             return  # stop() won the race
+        except BaseException:
+            # Cancelled half-way: leave a session that can be started again.
+            self._started = False
+            self._observations.remove(observation)
+            self._transport.remove_stream(observation.token)
+            raise
         self._spawn(self._run_forever("liveness", self._liveness_step))
         self._spawn(self._run_forever("refresh", self._refresh_step))
 
@@ -457,21 +464,24 @@ class Session:
             return
         self._stop_done = asyncio.Event()
         self._stopped = True
-        for waiter in self._waiters:
-            waiter.stop()
-        while tasks := [task for task in self._tasks if task is not asyncio.current_task()]:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-        # The lock is only ever held for the bounded time of opening a socket.
-        async with self._socket_lock:
-            # Best effort, nothing is awaited: whether the AC3220 honours a
-            # deregistration is not measured yet.
-            for observation in self._observations:
-                self._send_deregistration(observation)
+        try:
+            for waiter in self._waiters:
+                waiter.stop()
+            while tasks := [task for task in self._tasks if task is not asyncio.current_task()]:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+            # The lock is only ever held for the bounded time of opening a socket.
+            async with self._socket_lock:
+                # Best effort, nothing is awaited: whether the AC3220 honours
+                # a deregistration is not measured yet.
+                for observation in self._observations:
+                    self._send_deregistration(observation)
+        finally:
+            # Also when this call itself is cancelled.
             self._transport.close()
-        self._state = SessionState.OFFLINE
-        self._stop_done.set()
+            self._state = SessionState.OFFLINE
+            self._stop_done.set()
 
     def _spawn(self, coro: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
         task = asyncio.get_running_loop().create_task(coro)
@@ -746,9 +756,7 @@ class Session:
         mistake that makes the existing integrations flap.
         """
         observation = self._observations[-1]
-        msg = build_request(
-            MType.NON, GET, self._transport.next_mid(), observation.token, STATUS_PATH, observe=0
-        )
+        msg = build_request(MType.NON, GET, self._transport.next_mid(), observation.token, STATUS_PATH, observe=0)
         if self._send(msg):
             self._counters.registrations_sent += 1
             if self._last_registration is not None:
@@ -757,11 +765,7 @@ class Session:
         self._refresh_pending = False
 
     def _send_deregistration(self, observation: _Observation) -> None:
-        self._send(
-            build_request(
-                MType.NON, GET, self._transport.next_mid(), observation.token, STATUS_PATH, observe=1
-            )
-        )
+        self._send(build_request(MType.NON, GET, self._transport.next_mid(), observation.token, STATUS_PATH, observe=1))
 
     def _request_refresh(self, *, force: bool = False) -> None:
         """Ask for an extra registration (rule 5).
@@ -874,11 +878,7 @@ class Session:
             raise _FrameError("identity_mismatch", missed_change=False)
         runtime = reported.get(RUNTIME_KEY)
         last = self._last_runtime
-        if (
-            _is_int(runtime)
-            and last is not None
-            and 0 < last - runtime < self._options.runtime_stale_window_ms
-        ):
+        if _is_int(runtime) and last is not None and 0 < last - runtime < self._options.runtime_stale_window_ms:
             # Slightly older than what is already applied: a reordered frame.
             raise _FrameError("stale", missed_change=False)
 
@@ -935,9 +935,12 @@ class Session:
         """Write values and wait until the device reports them.
 
         Raises DeviceOffError, RefusedError, UnreachableError or
-        NotConfirmedError. Commands are serialised by the exchange lock.
-        Merging several pending writes into one message (report 6.4 item 6)
-        is not done yet; several keys in one call do travel in one message.
+        NotConfirmedError. An unconfirmed write takes about 11 s at the
+        default timings: 5 s, a refresh, 3 s, one resend and 3 s more.
+
+        Commands are serialised by the exchange lock. Merging several pending
+        writes into one message (report 6.4 item 6) is not done yet; several
+        keys in one call do travel in one message.
         """
         self._check_running()
         desired = self._validated(values)
@@ -949,9 +952,7 @@ class Session:
             raise DeviceOffError("the device is off and would discard this", desired)
         accepted = {key: accepted_readback(key, value) for key, value in desired.items()}
         already_current = (
-            self._status_is_live
-            and status is not None
-            and all(status.get(key) in ok for key, ok in accepted.items())
+            self._status_is_live and status is not None and all(status.get(key) in ok for key, ok in accepted.items())
         )
         # Registered before anything is sent, so that no frame can slip by.
         waiter = _FrameWaiter(accepted)

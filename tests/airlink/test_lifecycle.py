@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from airlink import SessionState, SessionStoppedError
+from airlink.transport import Transport
 
 if TYPE_CHECKING:
     from conftest import Bench
@@ -170,6 +171,54 @@ def test_cancelled_write_leaves_the_session_usable(bench: Bench) -> None:
         fake.silent = False
         result = await session.write({"D03103": 1})  # the lock was released
         assert not result.resent and fake.state["D03103"] == 1
+
+    bench.run(body)
+
+
+def test_cancelled_start_and_cancelled_stop_leave_nothing_behind(bench: Bench, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def body() -> None:
+        real_open = Transport.open
+        hang = True
+
+        async def slow_open(transport: Transport) -> None:
+            if hang:
+                await asyncio.sleep(30)
+            await real_open(transport)
+
+        monkeypatch.setattr(Transport, "open", slow_open)
+        session = bench.session(options=bench.options(socket_timeout=30.0))
+        starting = asyncio.ensure_future(session.start())
+        await asyncio.sleep(0.01)
+        starting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await starting
+        assert not other_tasks() and bench.fake.datagrams_received == 0
+
+        # The same session can still be started...
+        hang = False
+        await session.start()
+        await bench.until(lambda: session.available)
+        assert len(set(bench.fake.registrations)) == 1
+
+        # ...and a stop() that is cancelled half-way still ends everything.
+        hang = True
+        protocol = session._transport._protocol
+        assert protocol is not None
+        protocol.error_received(OSError("network is unreachable"))  # the next write wants a new socket
+        writing = asyncio.ensure_future(session.write({"D03103": 1}))
+        await asyncio.sleep(0.01)  # the write now holds the socket lock, inside the slow open
+        stopping = asyncio.ensure_future(session.stop())
+        await asyncio.sleep(0.01)
+        stopping.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await stopping
+        await session.stop()  # does not hang on the cancelled one
+        assert session.state is SessionState.OFFLINE
+        writing.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await writing
+        assert not other_tasks()
+        await assert_quiet(bench)
 
     bench.run(body)
 
