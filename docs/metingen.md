@@ -59,7 +59,7 @@ Eén abonnement, zonder vernieuwing en zonder enig ander verkeer van de client.
 
 ### Meting 5: kinderslot in stand-by en daarna
 
-Zes losse `set`-opdrachten achter elkaar.
+Zeven losse `set`-opdrachten achter elkaar.
 
 | # | Toestand | Opdracht | Antwoord | Statusbericht |
 |---|---|---|---|---|
@@ -69,6 +69,7 @@ Zes losse `set`-opdrachten achter elkaar.
 | 4 | Aan | `D03103=1` | `success` na 11 ms | Na 0,62 s, `StatusType` `control`; het kinderslot ging aan |
 | 5 | Aan | `D03103=0` | `success` na 8 ms | Na 0,10 s, `StatusType` `control`; het kinderslot ging uit |
 | 6 | Aan | `D03102=0` | `success` na 16 ms | Na 0,11 s, `StatusType` `control`; het apparaat ging uit |
+| 7 | Stand-by | `D03102=0` | `success` na 8 ms | Geen, in 10 s |
 
 Regel 3 laat zien dat de opdracht uit regel 1 niet is uitgevoerd: na het aanzetten stond het kinderslot nog uit. De eigenaar zag hetzelfde op het apparaat.
 
@@ -82,7 +83,7 @@ Regel 3 laat zien dat de opdracht uit regel 1 niet is uitgevoerd: na het aanzett
 | De terugmelding van een schrijfopdracht heeft meestal `StatusType` `control` (na 0,1 tot 0,6 s), maar één keer `status` (na 1,09 s) | `StatusType` is niet betrouwbaar om een bericht aan een commando te koppelen. Een deadline van 5 s voor de bevestiging is ruim. |
 | Een instelling die in stand-by wordt geschreven, krijgt `success` maar wordt niet uitgevoerd (gemeten voor het kinderslot) | Instellingen zijn in Home Assistant niet bedienbaar terwijl het apparaat uit staat. `success` is geen bewijs dat een opdracht is uitgevoerd. |
 | Een abonnement blijft minstens 20 minuten leveren zonder vernieuwing, terwijl het apparaat draait | Het verloop na ongeveer 150 s dat bij een AC4220/12 is gemeld, treedt hier niet op. Vernieuwen is een vangnet, geen noodzaak. |
-| Een opdracht met de waarde die al gold, geeft met het apparaat aan toch een statusbericht (na 0,12 s) | Anders dan bij de AMF870 uit het onderzoek. Dit is een manier om zonder bijwerking een verse status op te vragen. Of het ook in stand-by werkt, is nog niet gemeten. |
+| Een opdracht met de waarde die al gold, geeft met het apparaat aan toch een statusbericht (na 0,12 s), maar in stand-by niet | Anders dan bij de AMF870 uit het onderzoek. Met het apparaat aan is dit een manier om zonder bijwerking een verse status op te vragen. In stand-by bestaat die manier niet: de integratie toont dan de bewaarde toestand tot er iets verandert. |
 | De info-aanvraag is traag (ongeveer een halve seconde) en miste één keer | Geschikt voor herkenning, minder voor een frequente bereikbaarheidscontrole. Ping en sync zijn sneller. |
 | Verzoeken met ontvangstbevestiging worden beantwoord | Commando's kunnen met ontvangstbevestiging worden gestuurd, wat verlies op netwerkniveau zichtbaar maakt |
 | De status komt gefragmenteerd aan | Fragmenten moeten tussen Home Assistant en het apparaat worden doorgelaten |
@@ -92,7 +93,6 @@ Regel 3 laat zien dat de opdracht uit regel 1 niet is uitgevoerd: na het aanzett
 | Vraag | Opdracht |
 |---|---|
 | Blijft een abonnement ook leveren na lange stilte in stand-by? | `lapse` in stand-by, met de aan/uit-knop als verandering |
-| Geeft een opdracht met de huidige waarde ook in stand-by een statusbericht? | In stand-by `set D03102=0` |
 | Welke schrijfopdrachten werken? | `write-matrix` |
 | Hoe vernieuw je een abonnement, en met welk kenmerk? | `refresh` |
 | Welke controle blijft antwoorden gedurende uren stilte? | `liveness` in stand-by |
