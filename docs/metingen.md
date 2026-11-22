@@ -49,6 +49,27 @@ Waarden uit de status die voor het ontwerp tellen: `D0310C` 18 en `D0310D` 18 op
 | Statusbericht | 1,09 s na de opdracht, op een abonnement dat in stand-by was aangevraagd |
 | `StatusType` in dat bericht | `status`, niet `control` |
 
+### Meting 4: `lapse`, apparaat aan
+
+Eén abonnement, zonder vernieuwing en zonder enig ander verkeer van de client.
+
+| Controlepunt | Uitkomst |
+|---|---|
+| 3, 5, 10 en 20 minuten | Het abonnement leverde telkens nog, zonder dat een knopdruk nodig was |
+
+### Meting 5: kinderslot in stand-by en daarna
+
+Vijf losse `set`-opdrachten achter elkaar.
+
+| # | Toestand | Opdracht | Antwoord | Statusbericht |
+|---|---|---|---|---|
+| 1 | Stand-by | `D03103=1` | `success` na 13 ms | Geen |
+| 2 | Stand-by | `D03102=1` | `success` na 13 ms | Na 0,19 s, `StatusType` `control`; het apparaat ging aan |
+| 3 | Aan | `D03103=0` | `success` na 12 ms | De status toonde vooraf al 0. Toch een bericht na 0,12 s, `StatusType` `control` |
+| 4 | Aan | `D03103=1` | `success` na 11 ms | Na 0,62 s, `StatusType` `control`; het kinderslot ging aan |
+
+Regel 3 laat zien dat de opdracht uit regel 1 niet is uitgevoerd: na het aanzetten stond het kinderslot nog uit. De eigenaar zag hetzelfde op het apparaat.
+
 ## Wat dit vastlegt
 
 | Bevinding | Gevolg voor het ontwerp |
@@ -56,8 +77,10 @@ Waarden uit de status die voor het ontwerp tellen: `D0310C` 18 en `D0310D` 18 op
 | In stand-by is het apparaat bereikbaar maar stil: alle drie de controles antwoorden, een abonnement niet | Bevestigt de kern van hoofdstuk 6: bereikbaarheid los van de statusstroom meten, nooit op een statusbericht wachten, de laatst bekende toestand bewaren |
 | Een abonnement dat in stand-by is aangevraagd, levert zodra er iets verandert | Abonneren bij het opstarten heeft zin, ook als het apparaat uit staat |
 | Aanzetten vanuit stand-by werkt, met een terugmelding na ongeveer een seconde | De ventilator-entiteit kan het apparaat inschakelen; een deadline van 5 s voor de bevestiging is ruim |
-| De terugmelding van een schrijfopdracht heeft `StatusType` `status` | `StatusType` is niet bruikbaar om een bericht aan een commando te koppelen |
-| Het kinderslot schrijven in stand-by geeft `success` maar geen statusbericht | Nog uitzoeken of de waarde dan wel wordt opgeslagen. Zo niet, dan moeten instellingen in stand-by niet bedienbaar zijn; zo ja, dan mag een uitblijvende terugmelding in stand-by geen fout zijn. |
+| De terugmelding van een schrijfopdracht heeft meestal `StatusType` `control` (na 0,1 tot 0,6 s), maar één keer `status` (na 1,09 s) | `StatusType` is niet betrouwbaar om een bericht aan een commando te koppelen. Een deadline van 5 s voor de bevestiging is ruim. |
+| Een instelling die in stand-by wordt geschreven, krijgt `success` maar wordt niet uitgevoerd (gemeten voor het kinderslot) | Instellingen zijn in Home Assistant niet bedienbaar terwijl het apparaat uit staat. `success` is geen bewijs dat een opdracht is uitgevoerd. |
+| Een abonnement blijft minstens 20 minuten leveren zonder vernieuwing, terwijl het apparaat draait | Het verloop na ongeveer 150 s dat bij een AC4220/12 is gemeld, treedt hier niet op. Vernieuwen is een vangnet, geen noodzaak. |
+| Een opdracht met de waarde die al gold, geeft met het apparaat aan toch een statusbericht (na 0,12 s) | Anders dan bij de AMF870 uit het onderzoek. Dit is een manier om zonder bijwerking een verse status op te vragen. Of het ook in stand-by werkt, is nog niet gemeten. |
 | De info-aanvraag is traag (ongeveer een halve seconde) en miste één keer | Geschikt voor herkenning, minder voor een frequente bereikbaarheidscontrole. Ping en sync zijn sneller. |
 | Verzoeken met ontvangstbevestiging worden beantwoord | Commando's kunnen met ontvangstbevestiging worden gestuurd, wat verlies op netwerkniveau zichtbaar maakt |
 | De status komt gefragmenteerd aan | Fragmenten moeten tussen Home Assistant en het apparaat worden doorgelaten |
@@ -66,8 +89,8 @@ Waarden uit de status die voor het ontwerp tellen: `D0310C` 18 en `D0310D` 18 op
 
 | Vraag | Opdracht |
 |---|---|
-| Blijft een abonnement zonder vernieuwing leveren? | `lapse` |
-| Wordt een instelling die in stand-by is geschreven wel opgeslagen? | In stand-by `set D03103=1`, daarna aanzetten en de status bekijken |
+| Blijft een abonnement ook leveren na lange stilte in stand-by? | `lapse` in stand-by, met de aan/uit-knop als verandering |
+| Geeft een opdracht met de huidige waarde ook in stand-by een statusbericht? | In stand-by `set D03102=0` |
 | Welke schrijfopdrachten werken? | `write-matrix` |
 | Hoe vernieuw je een abonnement, en met welk kenmerk? | `refresh` |
 | Welke controle blijft antwoorden gedurende uren stilte? | `liveness` in stand-by |
