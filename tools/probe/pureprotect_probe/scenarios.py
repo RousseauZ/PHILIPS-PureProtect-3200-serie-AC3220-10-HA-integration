@@ -262,9 +262,12 @@ async def ensure_alive(
     window = ctx.direct_window if direct_window is None else direct_window
     frame = await dev.wait_frame(since=start, timeout=window, predicate=on_token)
     used_stimulus = False
+    stimulus_ok: bool | None = None
     if frame is None:
         used_stimulus = True
-        await ctx.stimulus.trigger(ctx, reason)
+        stimulus_ok = await ctx.stimulus.trigger(ctx, reason)
+        if not stimulus_ok:
+            ctx.doubt(f"De schrijfopdracht die een verandering moest uitlokken is mislukt ({reason}).")
         patience = ctx.first_frame_wait if stimulus_wait is None else stimulus_wait
         frame = await dev.wait_frame(since=start, timeout=patience, predicate=on_token)
     latency = None if frame is None else round(frame.t - sent, 3)
@@ -273,6 +276,7 @@ async def ensure_alive(
         "latency": latency,
         "direct": latency is not None and latency <= ctx.direct_seconds and not used_stimulus,
         "needed_stimulus": used_stimulus,
+        "stimulus_ok": stimulus_ok,
     }
 
 
@@ -430,6 +434,15 @@ async def quick(ctx: Context, *, duration: float = 60.0, count: int = 3) -> None
                 "Het apparaat is bereikbaar, maar er kwam geen statusbericht. Mogelijke oorzaken: er is niets veranderd op het apparaat, "
                 "of het netwerk laat grote (gefragmenteerde) UDP-pakketten niet door."
             )
+            if isinstance(ctx.stimulus, WriteStimulus):
+                ctx.conclude(
+                    f"De schrijfopdracht die een verandering moest uitlokken ({ctx.stimulus.key} naar een andere waarde en terug) is "
+                    + (
+                        "door het apparaat geaccepteerd, maar leverde geen statusbericht op."
+                        if alive["stimulus_ok"]
+                        else "NIET geaccepteerd of niet beantwoord."
+                    )
+                )
     else:
         ctx.conclude("Vernieuwen met hetzelfde kenmerk: " + refresh_text(refreshes) + ".")
         ctx.conclude("Statusaanvraag zonder abonnement: " + ("beantwoord." if plain is not None else "niet beantwoord binnen 5 s."))

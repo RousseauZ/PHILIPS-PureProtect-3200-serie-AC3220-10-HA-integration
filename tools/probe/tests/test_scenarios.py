@@ -72,9 +72,38 @@ def test_quick_on_a_device_that_answers_directly() -> None:
 
 def test_quick_on_push_on_change_firmware() -> None:
     ctx = run(lambda fake, ctx: scenarios.quick(ctx, duration=0.2, count=2), answer_registration="on_change")
-    assert ctx.result["first_frame"] == {"latency": ctx.result["first_frame"]["latency"], "direct": False, "needed_stimulus": True}
+    first = ctx.result["first_frame"]
+    assert (first["direct"], first["needed_stimulus"], first["stimulus_ok"]) == (False, True, True)
     assert ctx.result["refresh_same_direct"] == 0
     assert "pas na een verandering" in text(ctx)
+
+
+def test_quick_says_whether_the_write_stimulus_was_accepted() -> None:
+    async def accepted(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        ctx.stimulus = scenarios.WriteStimulus("D03105", (0, 115))  # read-only in the simulator: accepted, no change
+        await scenarios.quick(ctx, duration=0.1, count=1)
+
+    ctx = run(accepted, answer_registration="on_change")
+    assert "geaccepteerd, maar leverde geen statusbericht op" in text(ctx) and not ctx.doubts
+
+    async def refused(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        ctx.stimulus = scenarios.WriteStimulus()
+        await scenarios.quick(ctx, duration=0.1, count=1)
+        fake.sync_enabled = True
+
+    async def refused_setup(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        original = ctx.dev.control
+
+        async def failing(values: dict[str, Any], **kwargs: Any) -> Any:
+            fake.strict_counter = True
+            ctx.dev.counter = "00000000"
+            return await original(values, **{**kwargs, "sync_first": False})
+
+        ctx.dev.control = failing  # type: ignore[method-assign]
+        await refused(fake, ctx)
+
+    ctx = run(refused_setup, answer_registration="on_change")
+    assert "NIET geaccepteerd of niet beantwoord" in text(ctx) and ctx.doubts
 
 
 def test_quick_when_nothing_answers() -> None:
