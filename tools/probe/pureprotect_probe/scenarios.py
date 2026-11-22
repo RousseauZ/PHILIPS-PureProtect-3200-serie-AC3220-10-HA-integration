@@ -920,13 +920,11 @@ async def write_once(ctx: Context, values: dict[str, int], *, wait: float, sync_
     before = {key: (dev.latest or {}).get(key) for key in values}
     same_value = all(before[k] in accepted_readback(k, v) for k, v in values.items())
     start, sent = len(dev.frames), ctx.log.now()
+    quiet_before = quiet_for(dev, sent)
     reply = await dev.control(values, sync_first=sync_first, con=con, timeout=ctx.timeout)
 
     def shows(frame: Frame) -> bool:
         return frame.reported is not None and all(frame.reported.get(k) in accepted_readback(k, v) for k, v in values.items())
-
-    def is_control(frame: Frame) -> bool:
-        return frame.reported is not None and frame.reported.get("StatusType") == "control"
 
     echo: Frame | None = None
     control_frame: Frame | None = None
@@ -936,8 +934,11 @@ async def write_once(ctx: Context, values: dict[str, int], *, wait: float, sync_
     elif not reply.ok:
         verdict = "refused"
     elif same_value:
+        # A real AC3220 marks the echo of a write as StatusType "status", so the
+        # frame cannot be recognised by its type. It counts as caused by the
+        # write only when the stream was quiet just before.
         verdict = "same"
-        control_frame = await dev.wait_frame(since=start, timeout=wait, predicate=is_control)
+        control_frame = await dev.wait_frame(since=start, timeout=min(wait, 2 * ctx.direct_seconds))
     else:
         echo = await dev.wait_frame(since=start, timeout=wait, predicate=shows)
         if echo is None and ctx.token is not None:
@@ -963,6 +964,7 @@ async def write_once(ctx: Context, values: dict[str, int], *, wait: float, sync_
         "echo_s": None if echo is None else round(echo.t - sent, 2),
         "echo_after_refresh": after_refresh,
         "control_frame_s": None if control_frame is None else round(control_frame.t - sent, 2),
+        "same_value_conclusive": control_frame is None or quiet_before >= ctx.quiet_needed,
         "status_type": None if echo is None or echo.reported is None else echo.reported.get("StatusType"),
         "readback": {key: latest.get(key) for key in values},
         "fan_level": latest.get("D0310D"),
@@ -983,7 +985,12 @@ def describe_write(outcome: dict[str, Any]) -> str:
     text = f"{values}: antwoord '{outcome['reply']}' na {outcome['reply_ms']} ms; "
     if verdict == "same":
         frame = outcome["control_frame_s"]
-        text += "de waarde gold al, " + (f"toch een statusbericht na {frame} s" if frame is not None else "en er kwam geen statusbericht")
+        if frame is None:
+            text += "de waarde gold al, en er kwam geen statusbericht"
+        elif outcome["same_value_conclusive"]:
+            text += f"de waarde gold al, toch een statusbericht na {frame} s"
+        else:
+            text += f"de waarde gold al; of het statusbericht na {frame} s hierdoor kwam is niet te beoordelen, want het apparaat stuurde toch al berichten"
     elif verdict == "confirmed":
         text += f"teruggemeld na {outcome['echo_s']} s"
         if outcome["echo_after_refresh"]:
