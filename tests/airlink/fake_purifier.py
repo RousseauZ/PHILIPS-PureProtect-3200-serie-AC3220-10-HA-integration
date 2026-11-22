@@ -141,8 +141,9 @@ class FakePurifier(asyncio.DatagramProtocol):
         self.echo_delay = 0.0  # seconds between the control answer and the echo
         self.reply_from_other_port = False  # everything leaves from a second socket
 
-        # -- what arrived at the device, also while it is silent -----------
         self.observers: dict[Observer, dict[str, Any]] = {}
+
+        # -- what arrived at the device, also while it is silent -----------
         self.requests: list[tuple[str, str]] = []
         self.registrations: list[Observer] = []
         self.deregistrations: list[Observer] = []

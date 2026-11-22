@@ -154,7 +154,7 @@ Vijf rondes; per ronde gingen vier info-aanvragen tegelijk uit.
 | Multicast 224.0.1.187 | 0 van 5 |
 | Rechtstreeks | 3 van 5 |
 
-Een ander apparaat in het netwerk (10.10.10.68) antwoordde ook op de broadcast en de multicast, met een antwoord zonder `modelid`, `type` of `device_id`.
+Een ander apparaat in het netwerk, een LG-televisie, antwoordde ook op de broadcast en de multicast, met een antwoord zonder `modelid`, `type` of `device_id`.
 
 ### Eerste statusbericht na een nieuw abonnement, over alle metingen
 
