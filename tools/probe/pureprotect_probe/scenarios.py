@@ -35,8 +35,8 @@ class Stimulus:
 
     label = "geen"
 
-    async def trigger(self, ctx: Context, reason: str) -> None:
-        """Cause one change on the device."""
+    async def trigger(self, ctx: Context, reason: str) -> bool:
+        """Cause one change on the device; False when that certainly failed."""
         raise NotImplementedError
 
 
@@ -45,9 +45,10 @@ class ButtonStimulus(Stimulus):
 
     label = "knop"
 
-    async def trigger(self, ctx: Context, reason: str) -> None:
+    async def trigger(self, ctx: Context, reason: str) -> bool:
         ctx.log.write("stimulus", kind="button", reason=reason)
         ctx.say(f"\a>>> Druk NU één keer op de standknop van de luchtreiniger ({reason}).")
+        return True
 
 
 class WriteStimulus(Stimulus):
@@ -59,7 +60,7 @@ class WriteStimulus(Stimulus):
         self.key = key
         self.values = values
 
-    async def trigger(self, ctx: Context, reason: str) -> None:
+    async def trigger(self, ctx: Context, reason: str) -> bool:
         first, second = self.values
         current = (ctx.dev.latest or {}).get(self.key)
         if current == first:
@@ -71,6 +72,7 @@ class WriteStimulus(Stimulus):
         await ctx.rest(1.5)
         two = await ctx.dev.control({self.key: second})
         ctx.log.write("stimulus", kind="write", reason=reason, key=self.key, sequence=[first, second], ok=[one.ok, two.ok])
+        return one.ok and two.ok
 
 
 class CallbackStimulus(Stimulus):
@@ -81,9 +83,10 @@ class CallbackStimulus(Stimulus):
     def __init__(self, callback: Callable[[], None]) -> None:
         self.callback = callback
 
-    async def trigger(self, ctx: Context, reason: str) -> None:
+    async def trigger(self, ctx: Context, reason: str) -> bool:
         ctx.log.write("stimulus", kind="callback", reason=reason)
         self.callback()
+        return True
 
 
 # -- context ---------------------------------------------------------------
@@ -107,7 +110,10 @@ class Context:
     direct_seconds: float = DIRECT_SECONDS
     stimulus_wait: float = 30.0  # how long to wait for a frame after a stimulus
     first_frame_wait: float = 60.0  # same, for the very first frame
+    quiet_needed: float = 4.0  # silence before a refresh for its answer to count
     summary: list[str] = field(default_factory=list)
+    doubts: list[str] = field(default_factory=list)  # reasons to distrust this run
+    token: bytes | None = None  # the observation registered last by ensure_alive
     result: dict[str, Any] = field(default_factory=dict)
     extra_endpoints: list[Endpoint] = field(default_factory=list)
 
@@ -123,6 +129,12 @@ class Context:
         """Add a line to the summary, which is printed once at the end."""
         self.summary.append(text)
         self.log.write("conclusion", text=text)
+
+    def doubt(self, text: str) -> None:
+        """Record a reason why the outcome of this run may be unreliable."""
+        if text not in self.doubts:
+            self.doubts.append(text)
+            self.log.write("doubt", text=text)
 
     async def confirm(self, text: str) -> bool:
         """Ask a yes/no question; Enter means yes."""
@@ -201,13 +213,29 @@ async def wait_any_frame(devs: list[Purifier], starts: list[int], timeout: float
 async def stimulate(
     ctx: Context, reason: str, *, devs: list[Purifier] | None = None, wait: float | None = None, settle: float = 2.0
 ) -> list[list[Frame]]:
-    """Trigger a change and return the frames each device object received."""
+    """Trigger a change and return the frames each device object received.
+
+    "No frame" is only meaningful when the change really happened, so a
+    missed button press is asked about and retried once.
+    """
     devices = devs or [ctx.dev]
-    starts = [len(dev.frames) for dev in devices]
-    await ctx.stimulus.trigger(ctx, reason)
-    if await wait_any_frame(devices, starts, ctx.stimulus_wait if wait is None else wait):
-        await ctx.rest(settle)
-    return [dev.frames[start:] for dev, start in zip(devices, starts, strict=True)]
+    patience = ctx.stimulus_wait if wait is None else wait
+    for attempt in (1, 2):
+        starts = [len(dev.frames) for dev in devices]
+        issued = await ctx.stimulus.trigger(ctx, reason)
+        if await wait_any_frame(devices, starts, patience):
+            await ctx.rest(settle)
+            return [dev.frames[start:] for dev, start in zip(devices, starts, strict=True)]
+        if not issued:
+            ctx.doubt(f"De schrijfopdracht die een verandering moest uitlokken is mislukt ({reason}).")
+            break
+        if attempt == 1 and isinstance(ctx.stimulus, ButtonStimulus):
+            if await ctx.confirm("Er kwam geen statusbericht. Heb je op de standknop gedrukt en wisselde het apparaat van stand?"):
+                break
+            ctx.say("Dan nog één poging.")
+            continue
+        break
+    return [[] for _ in devices]
 
 
 async def ensure_alive(
@@ -223,6 +251,8 @@ async def ensure_alive(
     """Register (optionally) and make sure a frame arrives on the token."""
     start = len(dev.frames)
     sent = ctx.log.now()
+    if dev is ctx.dev:
+        ctx.token = token
     if register:
         dev.register(token)
 
@@ -264,6 +294,52 @@ def describe_frame(frame: Frame) -> str:
     return f"Statusbericht: {frame.size} bytes ({size}), {kind}, Max-Age {frame.max_age}, volgnummer {frame.observe}"
 
 
+def quiet_for(dev: Purifier, now: float) -> float:
+    """Seconds since the last frame (infinite when there was none)."""
+    return now - dev.frames[-1].t if dev.frames else float("inf")
+
+
+async def refresh_once(ctx: Context, dev: Purifier, token: bytes, *, what: str = "refresh-same") -> dict[str, Any]:
+    """Re-register and see whether the device answers directly.
+
+    A frame right after the request only counts as an answer when the stream
+    was quiet just before; otherwise it may be an ordinary change notification.
+    """
+    quiet = quiet_for(dev, ctx.log.now())
+    start, sent = len(dev.frames), ctx.log.now()
+    dev.register(token, what=what)
+    answer = await dev.wait_frame(since=start, timeout=ctx.direct_seconds, predicate=lambda f: f.token == token)
+    entry = {
+        "t": round(sent, 2),
+        "answered": answer is not None,
+        "identical": None if answer is None else answer.identical,
+        "latency": None if answer is None else round(answer.t - sent, 3),
+        "conclusive": answer is None or quiet >= ctx.quiet_needed,
+    }
+    ctx.log.write("refresh", mode=what, token=token.hex(), quiet_before_s=None if quiet == float("inf") else round(quiet, 1), **entry)
+    return entry
+
+
+def refresh_text(entries: list[dict[str, Any]]) -> str:
+    """Dutch summary of a series of refreshes."""
+    conclusive = [e for e in entries if e["conclusive"]]
+    answered = sum(1 for e in conclusive if e["answered"])
+    text = f"{answered} van {len(conclusive)} direct beantwoord"
+    unclear = len(entries) - len(conclusive)
+    if unclear:
+        text += f"; {unclear} niet te beoordelen omdat het apparaat op dat moment toch al berichten stuurde"
+    return text
+
+
+def warn_blockwise(ctx: Context, dev: Purifier) -> None:
+    """Say so when the device used block-wise transfer."""
+    if any(f.decode == "err:blockwise" for f in dev.frames):
+        ctx.conclude(
+            "LET OP: het apparaat verstuurt de status in blokken (CoAP Block2). Dit programma voegt die niet samen, "
+            "dus de status is niet gelezen. Meld dit; de protocollaag moet dit dan ondersteunen."
+        )
+
+
 def save_status(ctx: Context, reported: dict[str, Any]) -> None:
     """Write the status as JSON next to the event log."""
     if ctx.out_dir is None:
@@ -289,40 +365,43 @@ async def quick(ctx: Context, *, duration: float = 60.0, count: int = 3) -> None
     """First contact: identity, the three probes, and how the first status arrives."""
     dev = ctx.dev
     ctx.say("Stap 1 van 5: info-aanvraag, sync en CoAP-ping.")
-    info = await probe_series(lambda: dev.info(timeout=ctx.timeout), count, 1.0)
+    info = await probe_series(lambda: dev.info(timeout=ctx.timeout), count, 1.0 * ctx.pace)
     info_con = await dev.info(con=True, timeout=ctx.timeout)
-    sync = await probe_series(lambda: dev.sync(timeout=ctx.timeout), count, 1.0)
+    sync = await probe_series(lambda: dev.sync(timeout=ctx.timeout), count, 1.0 * ctx.pace)
     sync_con = await dev.sync(con=True, timeout=ctx.timeout)
-    ping = await probe_series(lambda: dev.ping(timeout=ctx.timeout), count, 1.0)
+    ping = await probe_series(lambda: dev.ping(timeout=ctx.timeout), count, 1.0 * ctx.pace)
     info_data = next((r.data for r in [*info, info_con] if isinstance(r.data, dict)), None)
+    stats = {"info": reply_stats(info), "sync": reply_stats(sync), "ping": reply_stats(ping)}
+    nothing = not any(r.ok for r in [*info, info_con, *sync, sync_con, *ping])
+    if nothing:
+        ctx.say("Geen enkel verzoek is beantwoord. Het programma probeert nog een abonnement, maar controleer intussen het IP-adres.")
 
     ctx.say("Stap 2 van 5: abonnement op de status.")
     token = ctx.ep.new_token()
-    alive = await ensure_alive(ctx, dev, token)
+    alive = await ensure_alive(ctx, dev, token, stimulus_wait=min(15.0, ctx.first_frame_wait) if nothing else None)
     frame: Frame | None = alive["frame"]
 
-    ctx.say("Stap 3 van 5: twee keer vernieuwen met hetzelfde kenmerk.")
-    refresh_direct = 0
-    for _ in range(2):
-        await ctx.rest(5.0)
-        start, sent = len(dev.frames), ctx.log.now()
-        dev.register(token, what="refresh-same")
-        answer = await dev.wait_frame(since=start, timeout=ctx.direct_seconds)
-        ctx.log.write("refresh", mode="same", answered=answer is not None, latency=None if answer is None else round(answer.t - sent, 3), identical=None if answer is None else answer.identical)
-        refresh_direct += answer is not None
+    refreshes: list[dict[str, Any]] = []
+    plain = None
+    listened: list[Frame] = []
+    listen_start = ctx.log.now()
+    if frame is not None:
+        ctx.say("Stap 3 van 5: twee keer vernieuwen met hetzelfde kenmerk.")
+        for _ in range(2):
+            await ctx.rest(5.0)
+            refreshes.append(await refresh_once(ctx, dev, token))
 
-    ctx.say("Stap 4 van 5: statusaanvraag zonder abonnement.")
-    plain_token = ctx.ep.new_token()
-    start = len(dev.frames)
-    dev.plain_status_get(plain_token)
-    plain = await dev.wait_frame(since=start, timeout=5.0 * ctx.pace, predicate=lambda f: f.token == plain_token)
+        ctx.say("Stap 4 van 5: statusaanvraag zonder abonnement.")
+        plain_token = ctx.ep.new_token()
+        start = len(dev.frames)
+        dev.plain_status_get(plain_token)
+        plain = await dev.wait_frame(since=start, timeout=5.0 * ctx.pace, predicate=lambda f: f.token == plain_token)
 
-    ctx.say(f"Stap 5 van 5: {duration:.0f} seconden meeluisteren.")
-    listen_start, frames_before = ctx.log.now(), len(dev.frames)
-    await asyncio.sleep(duration)
-    listened = dev.frames[frames_before:]
+        ctx.say(f"Stap 5 van 5: {duration:.0f} seconden meeluisteren.")
+        listen_start, frames_before = ctx.log.now(), len(dev.frames)
+        await asyncio.sleep(duration)
+        listened = dev.frames[frames_before:]
 
-    stats = {"info": reply_stats(info), "sync": reply_stats(sync), "ping": reply_stats(ping)}
     ctx.conclude(stats_text("Info-aanvraag", stats["info"]))
     ctx.conclude(stats_text("Sync", stats["sync"]))
     ctx.conclude(stats_text("CoAP-ping", stats["ping"]))
@@ -333,10 +412,38 @@ async def quick(ctx: Context, *, duration: float = 60.0, count: int = 3) -> None
         + ("beantwoord" if sync_con.ok else "niet beantwoord")
         + "."
     )
+    if info_data is not None:
+        ctx.conclude(
+            f"Info-antwoord: modelid {info_data.get('modelid')}, type {info_data.get('type')}, "
+            f"swversion {info_data.get('swversion')}, option {info_data.get('option')}."
+        )
     ctx.conclude("Abonnement: " + describe_first(alive) + ".")
-    ctx.conclude(f"Vernieuwen met hetzelfde kenmerk: {refresh_direct} van 2 direct beantwoord.")
-    ctx.conclude("Statusaanvraag zonder abonnement: " + ("beantwoord." if plain is not None else "niet beantwoord binnen 5 s."))
     same_id: bool | None = None
+    if frame is None:
+        if nothing:
+            ctx.conclude(
+                "Het apparaat antwoordt nergens op. Controleer het IP-adres, of het apparaat aan het wifi-netwerk hangt, "
+                "en of een firewall UDP-poort 5683 of inkomend UDP-verkeer tegenhoudt."
+            )
+        else:
+            ctx.conclude(
+                "Het apparaat is bereikbaar, maar er kwam geen statusbericht. Mogelijke oorzaken: er is niets veranderd op het apparaat, "
+                "of het netwerk laat grote (gefragmenteerde) UDP-pakketten niet door."
+            )
+    else:
+        ctx.conclude("Vernieuwen met hetzelfde kenmerk: " + refresh_text(refreshes) + ".")
+        ctx.conclude("Statusaanvraag zonder abonnement: " + ("beantwoord." if plain is not None else "niet beantwoord binnen 5 s."))
+        ctx.conclude(describe_frame(frame) + ".")
+        rate = len(listened) / duration if duration > 0 else 0.0
+        ctx.conclude(
+            f"Meeluisteren: {len(listened)} statusberichten in {duration:.0f} s, "
+            f"langste stilte {frame_gaps(listened, listen_start, ctx.log.now()):.0f} s."
+        )
+        if alive["direct"] and rate >= 0.1:
+            ctx.conclude(
+                "Let op: het apparaat stuurde tijdens deze meting uit zichzelf vaak berichten. Of het eerste bericht een antwoord op de "
+                "aanvraag was, is daardoor niet zeker. Herhaal deze meting met het apparaat in stand-by."
+            )
     if frame is not None and frame.reported is not None:
         reported = frame.reported
         save_status(ctx, dev.latest or reported)
@@ -344,7 +451,6 @@ async def quick(ctx: Context, *, duration: float = 60.0, count: int = 3) -> None
             f"Apparaat: model {reported.get('D01S05')}, platform {reported.get('D01S04')}, "
             f"firmware {reported.get('D01S12')}, wifi-firmware {reported.get('WifiVersion')}."
         )
-        ctx.conclude(describe_frame(frame) + ".")
         ctx.conclude(f"Sleutels in de status ({len(reported)}): " + " ".join(sorted(reported)))
         if info_data is not None:
             same_id = str(info_data.get("device_id")) == str(reported.get("DeviceId"))
@@ -353,16 +459,8 @@ async def quick(ctx: Context, *, duration: float = 60.0, count: int = 3) -> None
                 + ("gelijk aan" if same_id else "ANDERS dan")
                 + " het DeviceId in de status."
             )
-    if info_data is not None:
-        ctx.conclude(
-            f"Info-antwoord: modelid {info_data.get('modelid')}, type {info_data.get('type')}, "
-            f"swversion {info_data.get('swversion')}, option {info_data.get('option')}."
-        )
-    ctx.conclude(
-        f"Meeluisteren: {len(listened)} statusberichten in {duration:.0f} s, "
-        f"langste stilte {frame_gaps(listened, listen_start, ctx.log.now()):.0f} s."
-    )
-    bad = [f for f in dev.frames if f.decode.startswith("err")]
+    warn_blockwise(ctx, dev)
+    bad = [f for f in dev.frames if f.decode.startswith("err") and f.decode != "err:blockwise"]
     if bad:
         ctx.conclude(f"Let op: {len(bad)} bericht(en) niet te ontcijferen ({bad[0].decode}).")
     ctx.result.update(
@@ -370,7 +468,8 @@ async def quick(ctx: Context, *, duration: float = 60.0, count: int = 3) -> None
         info_con=info_con.ok,
         sync_con=sync_con.ok,
         first_frame={k: v for k, v in alive.items() if k != "frame"},
-        refresh_same_direct=refresh_direct,
+        refreshes=refreshes,
+        refresh_same_direct=sum(1 for e in refreshes if e["answered"] and e["conclusive"]),
         plain_get_answered=plain is not None,
         device_id_matches=same_id,
         frames_while_listening=len(listened),
@@ -464,6 +563,7 @@ async def status(ctx: Context, *, wait: float = 120.0) -> None:
     if frame is None or frame.reported is None:
         if frame is not None:
             ctx.conclude(f"Het bericht was niet te ontcijferen: {frame.decode}.")
+        warn_blockwise(ctx, ctx.dev)
         return
     save_status(ctx, frame.reported)
     ctx.conclude(describe_frame(frame) + ".")
@@ -489,13 +589,7 @@ async def observe(ctx: Context, *, duration: float = 600.0, refresh: str = "geen
             if refresh == "nieuw":
                 token = ctx.ep.new_token()
                 tokens.append(token)
-            start, sent = len(dev.frames), ctx.log.now()
-            dev.register(token, what=f"refresh-{refresh}")
-            current = token
-            answer = await dev.wait_frame(since=start, timeout=ctx.direct_seconds, predicate=lambda f, t=current: f.token == t)
-            entry = {"t": round(sent, 2), "answered": answer is not None, "identical": None if answer is None else answer.identical}
-            refreshes.append(entry)
-            ctx.log.write("refresh", mode=refresh, token=token.hex(), **entry)
+            refreshes.append(await refresh_once(ctx, dev, token, what=f"refresh-{refresh}"))
     frames = dev.frames
     per_token = {t.hex(): sum(1 for f in frames if f.token == t) for t in tokens}
     bad = [f for f in frames if f.decode.startswith("err")]
@@ -505,12 +599,12 @@ async def observe(ctx: Context, *, duration: float = 600.0, refresh: str = "geen
         ctx.conclude(f"Eerste bericht {frames[0].t - start_time:.1f} s na de aanvraag; laatste {ctx.log.now() - frames[-1].t:.0f} s voor het einde.")
         ctx.conclude(f"Berichttype: {', '.join(kinds)}; Max-Age {sorted({f.max_age for f in frames if f.max_age is not None})}.")
     if refresh != "geen":
-        answered = sum(1 for r in refreshes if r["answered"])
-        ctx.conclude(f"Vernieuwen ({refresh} kenmerk, elke {interval:.0f} s): {answered} van {len(refreshes)} direct beantwoord.")
+        ctx.conclude(f"Vernieuwen ({refresh} kenmerk, elke {interval:.0f} s): {refresh_text(refreshes)}.")
         if refresh == "nieuw":
             ctx.conclude("Berichten per kenmerk: " + ", ".join(f"{k}: {v}" for k, v in per_token.items()))
     if bad:
         ctx.conclude(f"Niet te ontcijferen: {len(bad)} ({', '.join(sorted({f.decode for f in bad}))}).")
+    warn_blockwise(ctx, dev)
     observe_values = [f.observe for f in frames if f.observe is not None]
     if len(observe_values) > 1:
         rising = all(b > a for a, b in zip(observe_values, observe_values[1:], strict=False))
@@ -543,7 +637,8 @@ async def liveness(ctx: Context, *, duration: float = 7200.0, interval: float = 
             began = loop.time()
             reply = await call()
             series[name].append(reply)
-            silent_for = ctx.log.now() - (dev.frames[-1].t if dev.frames else start_time)
+            changes = [f.t for f in dev.frames if not f.identical]
+            silent_for = ctx.log.now() - (changes[-1] if changes else start_time)
             if silent_for > 120:
                 during_silence[name].append(reply)
             await asyncio.sleep(max(0.0, step - (loop.time() - began)))
@@ -560,15 +655,19 @@ async def liveness(ctx: Context, *, duration: float = 7200.0, interval: float = 
     silence_stats = {name: reply_stats(replies) for name, replies in during_silence.items()}
     for name in series:
         ctx.conclude(stats_text(names[name], stats[name]))
-    longest = frame_gaps(dev.frames, start_time, ctx.log.now())
-    ctx.conclude(f"{len(dev.frames)} statusberichten; langste stilte {longest:.0f} s.")
+    changed_frames = [f for f in dev.frames if not f.identical]
+    longest = frame_gaps(changed_frames, start_time, ctx.log.now())
+    ctx.conclude(
+        f"{len(dev.frames)} statusberichten, waarvan {len(changed_frames)} met een gewijzigde waarde; "
+        f"langste periode zonder wijziging {longest:.0f} s."
+    )
     if any(during_silence.values()):
-        ctx.conclude("Tijdens stiltes van meer dan 2 minuten:")
+        ctx.conclude("Controles die zijn verstuurd terwijl er al meer dan 2 minuten niets was gewijzigd:")
         for name in series:
             if during_silence[name]:
                 ctx.conclude("  " + stats_text(names[name], silence_stats[name]))
     else:
-        ctx.conclude("Er was geen stilte van meer dan 2 minuten; herhaal de meting met het apparaat in stand-by.")
+        ctx.conclude("Er was geen periode van meer dan 2 minuten zonder wijziging; herhaal de meting met het apparaat in stand-by.")
     counters = [int(r.data, 16) for r in series["sync"] if r.ok]
     if len(counters) > 2:
         steps = {(b - a) % 0x1_0000_0000 for a, b in zip(counters, counters[1:], strict=False)}
@@ -629,8 +728,18 @@ async def lapse(
             fresh = await ensure_alive(ctx, dev, ctx.ep.new_token(), reason="herstel met een nieuw kenmerk", stimulus_wait=ctx.stimulus_wait)
             recovery["new_token"] = fresh["frame"] is not None
             ctx.conclude("Opnieuw abonneren met een nieuw kenmerk: " + ("levert weer." if recovery["new_token"] else "levert NIET."))
+    if dead_at is not None and not any(recovery.values()):
+        ctx.conclude(
+            "Geen enkele poging leverde nog een bericht op. Dan is niet het abonnement verlopen, maar kwam er waarschijnlijk "
+            "geen verandering op het apparaat of was het onbereikbaar. Deze uitkomst telt niet; herhaal de meting."
+        )
     if sync_interval:
         ctx.conclude(f"Tijdens deze meting is elke {sync_interval:.0f} s een sync gestuurd.")
+    if isinstance(ctx.stimulus, WriteStimulus):
+        ctx.conclude(
+            "Let op: de verandering is uitgelokt met een schrijfopdracht. Dat is zelf verkeer naar het apparaat en kan een "
+            "abonnement in leven houden. Voor een zuivere uitkomst: herhaal met de standknop."
+        )
     ctx.result.update(checkpoints=outcomes, dead_at=dead_at, recovery=recovery, with_sync=sync_interval)
 
 
@@ -646,28 +755,20 @@ async def refresh_test(ctx: Context, *, pause: float = 20.0, repeats: int = 3) -
     same: list[dict[str, Any]] = []
     for _ in range(repeats):
         await asyncio.sleep(pause)
-        quiet_for = ctx.log.now() - dev.frames[-1].t
-        start, sent = len(dev.frames), ctx.log.now()
-        dev.register(token, what="refresh-same")
-        answer = await dev.wait_frame(since=start, timeout=ctx.direct_seconds)
-        entry = {"answered": answer is not None, "identical": None if answer is None else answer.identical, "quiet_before_s": round(quiet_for, 1)}
-        same.append(entry)
-        ctx.log.write("refresh", mode="same", latency=None if answer is None else round(answer.t - sent, 3), **entry)
-    answered = sum(1 for r in same if r["answered"])
-    ctx.conclude(f"Vernieuwen met hetzelfde kenmerk: {answered} van {repeats} direct beantwoord.")
+        same.append(await refresh_once(ctx, dev, token))
+    ctx.conclude("Vernieuwen met hetzelfde kenmerk: " + refresh_text(same) + ".")
     after_same = (await stimulate(ctx, "na vernieuwen met hetzelfde kenmerk"))[0]
-    duplicates = len(after_same) - len({f.observe for f in after_same})
+    observe_values = [f.observe for f in after_same if f.observe is not None]
+    duplicates = len(observe_values) - len(set(observe_values))
     ctx.conclude(
         "Na een verandering: "
         + (f"{len(after_same)} bericht(en) ontvangen" if after_same else "GEEN bericht ontvangen")
-        + (f", waarvan {duplicates} dubbel" if duplicates > 0 else "")
+        + (f", waarvan {duplicates} dubbel (zelfde volgnummer)" if duplicates > 0 else "")
         + "."
     )
     new_token = ctx.ep.new_token()
-    start, sent = len(dev.frames), ctx.log.now()
-    dev.register(new_token, what="refresh-new")
-    direct_new = await dev.wait_frame(since=start, timeout=ctx.direct_seconds, predicate=lambda f: f.token == new_token)
-    ctx.conclude("Abonneren met een nieuw kenmerk: " + ("direct beantwoord." if direct_new is not None else "niet direct beantwoord."))
+    fresh = await refresh_once(ctx, dev, new_token, what="refresh-new")
+    ctx.conclude("Abonneren met een nieuw kenmerk: " + refresh_text([fresh]) + ".")
     await ctx.rest(3.0)
     after_new = (await stimulate(ctx, "na abonneren met een nieuw kenmerk"))[0]
     on_old = sum(1 for f in after_new if f.token == token)
@@ -679,7 +780,9 @@ async def refresh_test(ctx: Context, *, pause: float = 20.0, repeats: int = 3) -
         ctx.conclude("Het nieuwe kenmerk heeft het oude vervangen.")
     elif on_old:
         ctx.conclude("Alleen het oude kenmerk levert; het nieuwe abonnement is niet aangenomen.")
-    ctx.result.update(same=same, after_same=len(after_same), duplicates=duplicates, new_direct=direct_new is not None, after_new={"old": on_old, "new": on_new})
+    else:
+        ctx.conclude("Geen van beide kenmerken leverde een bericht; deze uitkomst telt niet.")
+    ctx.result.update(same=same, after_same=len(after_same), duplicates=duplicates, new_direct=fresh["answered"], after_new={"old": on_old, "new": on_new})
 
 
 async def second_client(ctx: Context) -> None:
@@ -717,22 +820,39 @@ async def second_client(ctx: Context) -> None:
     counter_result: dict[str, Any] = {}
     key = "D03103"
     current = (dev_a.latest or {}).get(key)
-    if isinstance(current, int):
+    if not isinstance(current, int):
+        ctx.conclude(f"Tellerproef overgeslagen: sleutel {key} staat niet in de status.")
+    else:
+        # Every write below repeats the value the device already has, so nothing changes.
+        # Control: a write with a made-up counter must be refused, or the test says nothing.
+        if (await dev_a.sync(timeout=ctx.timeout)).ok:
+            dev_a.counter = f"{(int(dev_a.counter or '0', 16) + 0x5A5A5A) % 0x1_0000_0000:08X}"
+            bogus = await dev_a.control({key: current}, sync_first=False, timeout=ctx.timeout)
+            counter_result["bogus_counter"] = bogus.data
         sync_a = await dev_a.sync(timeout=ctx.timeout)
         sync_b2 = await dev_b.sync(timeout=ctx.timeout)
-        if sync_a.ok and sync_b2.ok:
+        if sync_a.ok and sync_b2.ok and "bogus_counter" in counter_result:
             write_a = await dev_a.control({key: current}, sync_first=False, timeout=ctx.timeout)
             write_b = await dev_b.control({key: current}, sync_first=False, timeout=ctx.timeout)
-            counter_result = {"a_after_b_synced": write_a.data, "b_own_counter": write_b.data}
+            counter_result.update(a_after_b_synced=write_a.data, b_own_counter=write_b.data)
             ctx.conclude(
-                f"Tellerproef (A synct, B synct, daarna schrijft A en dan B, elk met de eigen teller): A {write_a.data or 'geen antwoord'}, B {write_b.data or 'geen antwoord'}."
+                f"Tellerproef: een verzonnen teller geeft '{counter_result['bogus_counter'] or 'geen antwoord'}'. "
+                f"Daarna synct A, synct B, schrijft A en schrijft B, elk met de eigen teller: "
+                f"A '{write_a.data or 'geen antwoord'}', B '{write_b.data or 'geen antwoord'}'."
             )
-            if write_a.ok and write_b.ok:
-                ctx.conclude("Elke client heeft een eigen teller; een sync van een ander stoort niet.")
+            if counter_result["bogus_counter"] == "success":
+                ctx.conclude("Het apparaat accepteert ook een verzonnen teller; de teller wordt dus niet streng gecontroleerd en deze proef zegt verder niets.")
+            elif write_a.ok and write_b.ok:
+                ctx.conclude("Elke client heeft een eigen teller; een sync van een andere client vanaf dit adres stoort niet.")
             elif write_b.ok and not write_a.ok:
-                ctx.conclude("Er is één gedeelde teller: de sync van B maakte de teller van A ongeldig. Sync dus direct vóór elk commando.")
-    else:
-        ctx.conclude(f"Tellerproef overgeslagen: sleutel {key} staat niet in de status.")
+                ctx.conclude(
+                    "De sync van B maakte de teller van A ongeldig: clients vanaf hetzelfde IP-adres delen één teller. "
+                    "Of dat ook voor andere adressen geldt, is hiermee niet gemeten. Sync dus direct vóór elk commando."
+                )
+            else:
+                ctx.conclude("Deze uitkomst past in geen van de verwachte patronen; zie het logbestand.")
+        else:
+            ctx.conclude("Tellerproef overgeslagen: een sync bleef onbeantwoord.")
     ctx.result.update(b_direct=direct_b is not None, frames={"a": len(frames_a), "b": len(frames_b)}, a_after_b_sync=len(frames_after_sync), counter=counter_result)
 
 
@@ -776,29 +896,63 @@ def accepted_readback(key: str, value: int) -> set[int]:
 
 
 async def write_once(ctx: Context, values: dict[str, int], *, wait: float, sync_first: bool = True, con: bool = False) -> dict[str, Any]:
-    """Write values and wait for the status to show them."""
+    """Write values and find out what the device did with them.
+
+    The verdict is one of: "confirmed" (a later status shows the value),
+    "ignored" (accepted, but a later status still shows another value),
+    "unknown" (accepted, but no status arrived to tell), "same" (the value
+    was already set), "refused" or "no_reply".
+    """
     dev = ctx.dev
     before = {key: (dev.latest or {}).get(key) for key in values}
+    same_value = all(before[k] in accepted_readback(k, v) for k, v in values.items())
     start, sent = len(dev.frames), ctx.log.now()
     reply = await dev.control(values, sync_first=sync_first, con=con, timeout=ctx.timeout)
 
     def shows(frame: Frame) -> bool:
         return frame.reported is not None and all(frame.reported.get(k) in accepted_readback(k, v) for k, v in values.items())
 
-    echo = await dev.wait_frame(since=start, timeout=wait, predicate=shows) if reply.kind == "response" else None
-    any_frame = dev.frames[start] if len(dev.frames) > start else None
+    def is_control(frame: Frame) -> bool:
+        return frame.reported is not None and frame.reported.get("StatusType") == "control"
+
+    echo: Frame | None = None
+    control_frame: Frame | None = None
+    after_refresh = False
+    if reply.kind != "response":
+        verdict = "no_reply"
+    elif not reply.ok:
+        verdict = "refused"
+    elif same_value:
+        verdict = "same"
+        control_frame = await dev.wait_frame(since=start, timeout=wait, predicate=is_control)
+    else:
+        echo = await dev.wait_frame(since=start, timeout=wait, predicate=shows)
+        if echo is None and ctx.token is not None:
+            # The notification may have been lost or held back: ask for a fresh status.
+            again = len(dev.frames)
+            dev.register(ctx.token, what="refresh-after-write")
+            fresh = await dev.wait_frame(since=again, timeout=2 * ctx.direct_seconds)
+            if fresh is not None and shows(fresh):
+                echo, after_refresh = fresh, True
+        if echo is not None:
+            verdict = "confirmed"
+        else:
+            # Only a status that arrived well after the write can prove it was ignored.
+            late = [f for f in dev.frames[start:] if f.reported is not None and f.t - sent >= min(2.0, wait / 2)]
+            verdict = "ignored" if late else "unknown"
     latest = dev.latest or {}
     outcome = {
         "values": values,
         "before": before,
+        "verdict": verdict,
         "reply": reply.data if reply.kind == "response" else reply.kind,
         "reply_ms": None if reply.latency is None else round(reply.latency * 1000),
         "echo_s": None if echo is None else round(echo.t - sent, 2),
-        "any_frame_s": None if any_frame is None else round(any_frame.t - sent, 2),
+        "echo_after_refresh": after_refresh,
+        "control_frame_s": None if control_frame is None else round(control_frame.t - sent, 2),
         "status_type": None if echo is None or echo.reported is None else echo.reported.get("StatusType"),
         "readback": {key: latest.get(key) for key in values},
         "fan_level": latest.get("D0310D"),
-        "same_value": all(before[k] in accepted_readback(k, v) for k, v in values.items()),
     }
     ctx.log.write("write_result", **outcome)
     return outcome
@@ -807,21 +961,27 @@ async def write_once(ctx: Context, values: dict[str, int], *, wait: float, sync_
 def describe_write(outcome: dict[str, Any]) -> str:
     """One Dutch line for a write outcome."""
     values = " ".join(f"{k}={v}" for k, v in outcome["values"].items())
-    reply = outcome["reply"]
-    text = f"{values}: antwoord {reply}"
-    if outcome["reply_ms"] is not None:
-        text += f" na {outcome['reply_ms']} ms"
-    if outcome["same_value"]:
-        frame = outcome["any_frame_s"]
-        text += "; waarde gold al, " + (f"toch een statusbericht na {frame} s" if frame is not None else "geen statusbericht")
-    elif outcome["echo_s"] is not None:
-        text += f"; teruggemeld na {outcome['echo_s']} s"
-        if outcome["status_type"]:
+    readback = " ".join(f"{k}={v}" for k, v in outcome["readback"].items())
+    verdict = outcome["verdict"]
+    if verdict == "no_reply":
+        return f"{values}: geen antwoord op de schrijfopdracht."
+    if verdict == "refused":
+        return f"{values}: geweigerd (antwoord '{outcome['reply']}')."
+    text = f"{values}: antwoord '{outcome['reply']}' na {outcome['reply_ms']} ms; "
+    if verdict == "same":
+        frame = outcome["control_frame_s"]
+        text += "de waarde gold al, " + (f"toch een statusbericht na {frame} s" if frame is not None else "en er kwam geen statusbericht")
+    elif verdict == "confirmed":
+        text += f"teruggemeld na {outcome['echo_s']} s"
+        if outcome["echo_after_refresh"]:
+            text += " (pas na opnieuw abonneren)"
+        elif outcome["status_type"]:
             text += f" (StatusType {outcome['status_type']})"
+    elif verdict == "ignored":
+        text += f"GENEGEERD: een latere status toont {readback}"
     else:
-        readback = " ".join(f"{k}={v}" for k, v in outcome["readback"].items())
-        text += f"; NIET teruggemeld, status toont {readback}"
-    if "D0310C" in outcome["values"]:
+        text += "daarna geen statusbericht ontvangen, dus onbekend of de opdracht is uitgevoerd"
+    if "D0310C" in outcome["values"] and verdict in ("confirmed", "same"):
         text += f"; toerental D0310D={outcome['fan_level']}"
     return text + "."
 
@@ -829,7 +989,8 @@ def describe_write(outcome: dict[str, Any]) -> str:
 async def write(ctx: Context, values: dict[str, int], *, wait: float = 10.0, sync_first: bool = True, con: bool = False) -> None:
     """One write, with the time until the device reports it."""
     dev = ctx.dev
-    dev.register(ctx.ep.new_token())
+    ctx.token = ctx.ep.new_token()
+    dev.register(ctx.token)
     if await dev.wait_frame(since=0, timeout=5.0 * ctx.pace) is None:
         ctx.say("Nog geen statusbericht ontvangen; de waarde vooraf is onbekend.")
     outcome = await write_once(ctx, values, wait=wait, sync_first=sync_first, con=con)
@@ -837,7 +998,9 @@ async def write(ctx: Context, values: dict[str, int], *, wait: float = 10.0, syn
     ctx.result.update(outcome)
 
 
-WRITE_GROUPS: dict[str, list[tuple[str, int]]] = {
+# A value of None means: write the value the device reports right now.
+WRITE_GROUPS: dict[str, list[tuple[str, int | None]]] = {
+    "zelfde": [("D03103", None)],
     "aanuit": [("D03102", 0), ("D03102", 1)],
     "standen": [("D0310C", 17), ("D0310C", 19), ("D0310C", 18), ("D0310C", 0)],
     "snelheden": [("D0310C", 1), ("D0310C", 2), ("D0310C", 3), ("D0310C", 4), ("D0310C", 5)],
@@ -853,14 +1016,30 @@ WRITE_GROUPS: dict[str, list[tuple[str, int]]] = {
     ],
 }  # fmt: skip
 GROUP_TITLES = {
+    "zelfde": "Een opdracht met de waarde die al geldt (kinderslot)",
     "aanuit": "Aan en uit",
     "standen": "Standen (slaap 17, medium 19, turbo 18, auto 0)",
     "snelheden": "Handmatige snelheden 1 tot 5",
     "lamp": "Lampfunctie (uit 0, sfeerlicht 2, luchtkwaliteit 1)",
     "schakelaars": "Kinderslot, pieptoon, Auto+, Allergie-slaap, sensoren in stand-by",
-    "instellingen": "Weergegeven index, timer, drempel voor meldingen",
+    "instellingen": "Weergegeven index, timer (1 uur en weer uit), drempel voor meldingen",
     "display": "Displayhelderheid, lichtscène, displayschakelaar",
 }
+
+
+def restore_order(touched: list[str], original: dict[str, Any]) -> list[str]:
+    """Order in which touched keys are written back: power first when it was on, last when it was off."""
+    was_on = original.get("D03102") == 1
+    order: list[str] = []
+    if was_on and "D03102" in touched:
+        order.append("D03102")
+    order += [key for key in touched if key not in ("D0310C", "D03102")]
+    mode = original.get("D0310C")
+    if "D0310C" in touched and was_on and isinstance(mode, int) and mode >= 0:
+        order.append("D0310C")  # the mode reads negative while the device is off
+    if not was_on and "D03102" in touched:
+        order.append("D03102")
+    return order
 
 
 async def write_matrix(ctx: Context, *, groups: list[str], wait: float = 8.0, pause: float = 2.0, assume_yes: bool = False) -> None:
@@ -871,7 +1050,10 @@ async def write_matrix(ctx: Context, *, groups: list[str], wait: float = 8.0, pa
         ctx.conclude("Geen statusbericht ontvangen; zonder beginwaarden wordt er niets geschreven.")
         return
     original = dict(dev.latest)
-    ctx.say("Deze meting verandert instellingen van het apparaat en zet ze daarna terug. Het apparaat kan piepen, en de ventilator en het licht veranderen.")
+    ctx.say(
+        "Deze meting verandert instellingen van het apparaat en zet ze daarna terug. Het apparaat kan bij elke opdracht piepen, "
+        "de ventilator draait kort op de hoogste stand, het licht verandert en er wordt kort een timer gezet."
+    )
     for group in groups:
         ctx.say(f"  {group}: {GROUP_TITLES[group]}")
     if not assume_yes and not await ctx.confirm("Doorgaan?"):
@@ -879,51 +1061,55 @@ async def write_matrix(ctx: Context, *, groups: list[str], wait: float = 8.0, pa
         return
     outcomes: list[dict[str, Any]] = []
     touched: list[str] = []
+    not_restored: list[str] = []
+    unconfirmed: list[str] = []
     try:
         for group in groups:
             ctx.conclude(f"{GROUP_TITLES[group]}:")
             ctx.say(f"Groep: {GROUP_TITLES[group]}")
             if group != "aanuit" and (dev.latest or {}).get("D03102") == 0:
                 ctx.say("Het apparaat staat uit; het wordt eerst aangezet.")
-                await write_once(ctx, {"D03102": 1}, wait=wait)
                 if "D03102" not in touched:
                     touched.append("D03102")
+                await write_once(ctx, {"D03102": 1}, wait=wait)
                 await asyncio.sleep(pause)
-            for key, value in WRITE_GROUPS[group]:
-                if key not in (dev.latest or {}):
-                    ctx.conclude(f"  {key}={value}: sleutel staat niet in de status, overgeslagen.")
-                    outcomes.append({"values": {key: value}, "skipped": "missing_key", "group": group})
+            for key, planned in WRITE_GROUPS[group]:
+                current = (dev.latest or {}).get(key)
+                if key not in (dev.latest or {}) or (planned is None and not isinstance(current, int)):
+                    if not any(o.get("skipped") and key in o["values"] for o in outcomes):
+                        ctx.conclude(f"  {key}: sleutel staat niet in de status, overgeslagen.")
+                    outcomes.append({"values": {key: planned}, "skipped": "missing_key", "group": group})
                     continue
+                value = current if planned is None else planned
+                if key not in touched:
+                    touched.append(key)
                 outcome = await write_once(ctx, {key: value}, wait=wait)
                 outcome["group"] = group
                 outcomes.append(outcome)
-                if key not in touched:
-                    touched.append(key)
                 ctx.conclude("  " + describe_write(outcome))
                 ctx.say(describe_write(outcome))
                 await asyncio.sleep(pause)
     finally:
+        # Write every touched key back, whatever the last status says: a lost
+        # notification must not leave the purifier in a changed state.
         ctx.say("Instellingen terugzetten.")
-        not_restored: list[str] = []
-        ordered = [k for k in touched if k not in ("D0310C", "D03102")] + [k for k in ("D0310C", "D03102") if k in touched]
-        for key in ordered:
+        for key in restore_order(touched, original):
             target = original.get(key)
-            current = (dev.latest or {}).get(key)
-            if not isinstance(target, int) or current == target:
-                continue
-            if key == "D0310C" and target < 0:
-                continue  # the mode reads negative while the device is off
-            if key == "D0310C" and (dev.latest or {}).get("D03102") == 0:
+            if not isinstance(target, int):
                 continue
             outcome = await write_once(ctx, {key: target}, wait=wait)
-            if (dev.latest or {}).get(key) != target:
-                not_restored.append(f"{key} (was {target}, is nu {(dev.latest or {}).get(key)})")
+            if outcome["verdict"] == "ignored":
+                not_restored.append(f"{key} (was {target}, is nu {outcome['readback'][key]})")
+            elif outcome["verdict"] not in ("confirmed", "same"):
+                unconfirmed.append(f"{key} (moet {target} zijn)")
             await asyncio.sleep(pause)
         if not_restored:
-            ctx.conclude("LET OP, niet teruggezet: " + ", ".join(not_restored) + ". Zet dit zo nodig in de app terug.")
-        else:
-            ctx.conclude("Alle gewijzigde instellingen zijn teruggezet.")
-    ctx.result.update(writes=outcomes, not_restored=not_restored)
+            ctx.conclude("LET OP, niet teruggezet: " + ", ".join(not_restored) + ". Zet dit in de Air+ app terug.")
+        if unconfirmed:
+            ctx.conclude("Teruggezet maar niet bevestigd door een statusbericht: " + ", ".join(unconfirmed) + ". Controleer dit op het apparaat of in de Air+ app.")
+        if not not_restored and not unconfirmed:
+            ctx.conclude("Alle gewijzigde instellingen zijn teruggezet en bevestigd.")
+        ctx.result.update(writes=outcomes, not_restored=not_restored, restore_unconfirmed=unconfirmed)
 
 
 async def power_cycle(ctx: Context, *, off_timeout: float = 60.0, on_timeout: float = 300.0, old_wait: float = 60.0) -> None:

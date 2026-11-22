@@ -88,6 +88,7 @@ class FakePurifier(asyncio.DatagramProtocol):
         self.readonly_keys: set[str] = {"D03105", "D03137"}  # acked, then discarded
         self.push_on_same_value = False
         self.corrupt_next_frames = 0  # NUL bytes with a valid digest
+        self.drop_next_notifications = 0  # change notifications that get lost
         self.malformed_next_syncs = 0
         self.observers: dict[tuple[tuple[str, int], bytes], dict[str, Any]] = {}
         self.counters: dict[Any, str] = {}
@@ -270,6 +271,9 @@ class FakePurifier(asyncio.DatagramProtocol):
     # -- notifications -----------------------------------------------------
 
     def _notify(self, status_type: str) -> None:
+        if self.drop_next_notifications > 0:
+            self.drop_next_notifications -= 1
+            return
         now = time.monotonic()
         for key, meta in list(self.observers.items()):
             if self.lapse_after is not None and now - meta["registered"] > self.lapse_after:

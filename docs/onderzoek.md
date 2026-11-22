@@ -488,9 +488,11 @@ Schrijfopdrachten voor stap 5, in deze volgorde:
 
 Valkuilen bij het lezen van de uitkomst: een opdracht die blijft hangen kan een verloren sync zijn (afbreken en herhalen), en een sessie die met een foutmelding stopt kan een beschadigd bericht zijn en geen verlopen abonnement.
 
-### 7.2 Meetprogramma (eerste bouwstap)
+### 7.2 Meetprogramma
 
-Een klein eigen programma met een kale UDP-socket dat elk datagram met tijdstempel vastlegt. Het voert deze reeks uit:
+Het meetprogramma staat in [`tools/probe/`](../tools/probe/README.md). Het gebruikt een kale UDP-socket, legt elk datagram met tijdstempel vast en vervangt ook de snelle controle uit 7.1: de opdracht `quick` doet die stappen in twee minuten. Het is getest tegen een nagebootst apparaat en tegen bestaande implementaties, maar nog niet tegen een echte luchtreiniger.
+
+Het programma voert deze reeks uit:
 
 | Meting | Beslist |
 |---|---|

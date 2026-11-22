@@ -39,7 +39,7 @@ def run(body: Body, *, answers: list[Any] | None = None, write_stimulus: bool = 
             stimulus = scenarios.WriteStimulus()
         ctx = scenarios.Context(
             log=log, ep=endpoint, dev=device, host="127.0.0.1", port=fake.port, stimulus=stimulus, ask=ask,
-            timeout=0.3, pace=0.01, direct_window=0.3, direct_seconds=0.25, stimulus_wait=0.4, first_frame_wait=1.0,
+            timeout=0.3, pace=0.01, direct_window=0.3, direct_seconds=0.25, stimulus_wait=0.4, first_frame_wait=1.0, quiet_needed=0.03,
         )  # fmt: skip
         holder["ctx"] = ctx
         try:
@@ -119,7 +119,7 @@ def test_liveness_compares_probes() -> None:
     stats = ctx.result["stats"]
     assert stats["sync"]["answered"] == stats["sync"]["sent"] > 0
     assert stats["ping"]["answered"] == 0
-    assert "geen stilte van meer dan 2 minuten" in text(ctx)
+    assert "geen periode van meer dan 2 minuten zonder wijziging" in text(ctx)
 
 
 def test_lapse_detected_and_recovered_with_same_token() -> None:
@@ -151,18 +151,23 @@ def test_refresh_on_a_device_with_one_observer_per_ip() -> None:
 
 
 def test_second_client_with_shared_counter_and_two_observers() -> None:
-    ctx = run(scenarios_second := (lambda fake, ctx: scenarios.second_client(ctx)))
-    assert scenarios_second is not None
+    ctx = run(lambda fake, ctx: scenarios.second_client(ctx))
     assert ctx.result["frames"] == {"a": 1, "b": 1}
-    assert ctx.result["counter"] == {"a_after_b_synced": "failed", "b_own_counter": "success"}
-    assert "één gedeelde teller" in text(ctx)
+    assert ctx.result["counter"] == {"bogus_counter": "failed", "a_after_b_synced": "failed", "b_own_counter": "success"}
+    assert "delen één teller" in text(ctx)
 
 
 def test_second_client_evicts_first_and_has_own_counter() -> None:
     ctx = run(lambda fake, ctx: scenarios.second_client(ctx), single_observer_per_ip=True, global_counter=False)
     assert ctx.result["frames"] == {"a": 0, "b": 1}
-    assert ctx.result["counter"] == {"a_after_b_synced": "success", "b_own_counter": "success"}
-    assert "één abonnee per IP-adres" in text(ctx)
+    assert ctx.result["counter"] == {"bogus_counter": "failed", "a_after_b_synced": "success", "b_own_counter": "success"}
+    assert "één abonnee per IP-adres" in text(ctx) and "eigen teller" in text(ctx)
+
+
+def test_second_client_when_the_counter_is_not_checked() -> None:
+    ctx = run(lambda fake, ctx: scenarios.second_client(ctx), strict_counter=False)
+    assert ctx.result["counter"]["bogus_counter"] == "success"
+    assert "niet streng gecontroleerd" in text(ctx)
 
 
 def test_deregister_and_reset_honoured() -> None:
@@ -182,9 +187,41 @@ def test_single_write_is_echoed() -> None:
 
 
 def test_single_write_to_a_readonly_key() -> None:
+    # The simulator answers the follow-up registration, so the old value is seen again.
     ctx = run(lambda fake, ctx: scenarios.write(ctx, {"D03105": 0}, wait=0.3))
-    assert ctx.result["reply"] == "success" and ctx.result["echo_s"] is None
-    assert "NIET teruggemeld, status toont D03105=101" in text(ctx)
+    assert ctx.result["reply"] == "success" and ctx.result["verdict"] == "ignored"
+    assert "GENEGEERD: een latere status toont D03105=101" in text(ctx)
+
+
+def test_single_write_without_any_status_is_unknown_not_ignored() -> None:
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        await scenarios.ensure_alive(ctx, ctx.dev, ctx.ep.new_token())
+        ctx.result.update(await scenarios.write_once(ctx, {"D03105": 0}, wait=0.3))
+
+    ctx = run(body, answer_registration="on_change")
+    assert ctx.result["verdict"] == "unknown"
+    assert "onbekend of de opdracht is uitgevoerd" in scenarios.describe_write(ctx.result)
+
+
+def test_lost_notification_is_recovered_by_a_fresh_registration() -> None:
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        await scenarios.ensure_alive(ctx, ctx.dev, ctx.ep.new_token())
+        fake.drop_next_notifications = 1
+        ctx.result.update(await scenarios.write_once(ctx, {"D03135": 0}, wait=0.3))
+
+    ctx = run(body)
+    assert ctx.result["verdict"] == "confirmed" and ctx.result["echo_after_refresh"] is True
+
+
+def test_refused_write() -> None:
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        await scenarios.ensure_alive(ctx, ctx.dev, ctx.ep.new_token())
+        await ctx.dev.sync()
+        ctx.dev.counter = "00000000"
+        ctx.result.update(await scenarios.write_once(ctx, {"D03135": 0}, wait=0.3, sync_first=False))
+
+    ctx = run(body)
+    assert ctx.result["verdict"] == "refused" and "geweigerd (antwoord 'failed')" in scenarios.describe_write(ctx.result)
 
 
 def test_write_matrix_restores_everything() -> None:
@@ -201,11 +238,95 @@ def test_write_matrix_restores_everything() -> None:
     ctx = run(body)
     writes = {(tuple(w["values"].items())[0]): w for w in ctx.result["writes"] if "skipped" not in w}
     assert writes[("D0310C", 5)]["fan_level"] == 18 and writes[("D0310C", 5)]["echo_s"] is not None
-    assert writes[("D03105", 0)]["echo_s"] is None  # read-only in the simulator
+    assert writes[("D03105", 0)]["verdict"] == "ignored"  # read-only in the simulator
     assert writes[("D03130", 100)]["reply"] == "success"
-    assert ctx.result["not_restored"] == []
-    assert "Alle gewijzigde instellingen zijn teruggezet." in text(ctx)
+    assert ctx.result["writes"][0]["group"] == "zelfde" and ctx.result["writes"][0]["verdict"] == "same"
+    assert ctx.result["not_restored"] == [] and ctx.result["restore_unconfirmed"] == []
+    assert "Alle gewijzigde instellingen zijn teruggezet en bevestigd." in text(ctx)
     assert any(w.get("skipped") == "missing_key" for w in ctx.result["writes"])  # D03112 is absent
+
+
+def test_write_matrix_restores_when_the_last_notification_was_lost() -> None:
+    # On push-on-change firmware the tool never sees that the lamp write worked.
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        await scenarios.ensure_alive(ctx, ctx.dev, ctx.ep.new_token())
+        fake.answer_registration = "on_change"
+        original = scenarios.write_once
+
+        async def lossy(ctx2: scenarios.Context, values: dict[str, int], **kwargs: Any) -> dict[str, Any]:
+            if values == {"D03135": 0}:
+                fake.drop_next_notifications = 1
+            return await original(ctx2, values, **kwargs)
+
+        scenarios.write_once = lossy  # type: ignore[assignment]
+        try:
+            await scenarios.write_matrix(ctx, groups=["lamp"], wait=0.3, pause=0.0, assume_yes=True)
+        finally:
+            scenarios.write_once = original  # type: ignore[assignment]
+        assert fake.state["D03135"] == 1
+
+    ctx = run(body)
+    assert ctx.result["writes"][0]["verdict"] == "unknown"
+    assert ctx.result["not_restored"] == []
+
+
+def test_write_matrix_restores_after_ctrl_c() -> None:
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        task = asyncio.create_task(scenarios.write_matrix(ctx, groups=["snelheden", "lamp"], wait=0.3, pause=0.2, assume_yes=True))
+        while fake.state["D0310C"] != 2:
+            await asyncio.sleep(0.01)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        assert fake.state["D0310C"] == 0 and fake.state["D03135"] == 1
+
+    ctx = run(body)
+    assert "teruggezet en bevestigd" in text(ctx)
+
+
+def test_restore_order() -> None:
+    touched = ["D03102", "D0310C", "D03135"]
+    assert scenarios.restore_order(touched, {"D03102": 1, "D0310C": 19}) == ["D03102", "D03135", "D0310C"]
+    assert scenarios.restore_order(touched, {"D03102": 0, "D0310C": -16}) == ["D03135", "D03102"]
+
+
+def test_missed_button_press_is_asked_about_and_retried() -> None:
+    presses = {"count": 0}
+
+    class Forgetful(scenarios.ButtonStimulus):
+        async def trigger(self, ctx: scenarios.Context, reason: str) -> bool:
+            presses["count"] += 1
+            if presses["count"] >= 2:
+                ctx.fake.change("D03221", 50)  # type: ignore[attr-defined]
+            return True
+
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        await scenarios.ensure_alive(ctx, ctx.dev, ctx.ep.new_token())
+        ctx.fake = fake  # type: ignore[attr-defined]
+        ctx.stimulus = Forgetful()
+        frames = (await scenarios.stimulate(ctx, "proef"))[0]
+        assert len(frames) == 1 and presses["count"] == 2
+
+    run(body, answers=["n"])
+
+
+def test_blockwise_frames_are_named_as_such() -> None:
+    from pureprotect_probe.coap import CONTENT, OPT_BLOCK2, Message, MType
+    from pureprotect_probe.endpoint import Received
+
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        token = ctx.ep.new_token()
+        ctx.dev.register(token)
+        await ctx.dev.wait_frame(since=0, timeout=1)
+        block = Message(MType.NON, CONTENT, 9, token, [(OPT_BLOCK2, b"\x0e")], b"A" * 1024)
+        ctx.dev._frame_received(Received(ctx.log.now(), ("127.0.0.1", fake.port), block, 1040))
+        assert ctx.dev.frames[-1].decode == "err:blockwise"
+        scenarios.warn_blockwise(ctx, ctx.dev)
+
+    ctx = run(body)
+    assert "Block2" in text(ctx)
 
 
 def test_write_matrix_needs_confirmation() -> None:

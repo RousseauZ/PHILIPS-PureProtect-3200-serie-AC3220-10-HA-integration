@@ -2,9 +2,10 @@
 
 Doel van dit project: een betrouwbare, lokale Home Assistant-integratie voor de Philips PureProtect 3200-serie.
 
-Er is nog geen code. De huidige stand is het vooronderzoek:
+De integratie zelf bestaat nog niet. De huidige stand:
 
 - [Onderzoeksrapport](docs/onderzoek.md): hoe het apparaat communiceert, waarom de bestaande integraties haperen, en het voorgestelde ontwerp.
 - [Onderzoeksnotities](docs/research/README.md): de onderliggende notities met bronverwijzingen.
+- [Meetprogramma](tools/probe/README.md): meet op een echt apparaat wat het onderzoek niet kon vaststellen.
 
-Volgende stap: de meetsessie op een echt apparaat uit hoofdstuk 7 van het rapport.
+Volgende stap: het meetprogramma draaien tegen een echte AC3220, te beginnen met de opdracht `quick`.

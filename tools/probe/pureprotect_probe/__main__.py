@@ -218,10 +218,19 @@ async def run(args: argparse.Namespace) -> int:
     """Run one scenario and write its results."""
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir: Path = args.map / f"{stamp}-{args.command}"
-    log = EventLog(out_dir / "events.jsonl")
+    try:
+        log = EventLog(out_dir / "events.jsonl")
+    except OSError as err:
+        print(f"Kan de map voor de resultaten niet aanmaken ({out_dir}): {err}")
+        return 2
     arguments = {k: v for k, v in vars(args).items() if k not in ("stimulus", "map")}
     log.write("start", version=__version__, python=sys.version.split()[0], platform=sys.platform, stimulus=args.stimulus.label, arguments=arguments)
-    endpoint = await Endpoint.open(log, "A", local_port=args.lokale_poort, peer_ip=args.host)
+    try:
+        endpoint = await Endpoint.open(log, "A", local_port=args.lokale_poort, peer_ip=args.host)
+    except OSError as err:
+        log.close()
+        print(f"Kan de lokale UDP-poort niet openen: {err}")
+        return 2
     device = Purifier(endpoint, args.host, args.port, redact_ids=not args.toon_ids)
     ctx = scenarios.Context(
         log=log, ep=endpoint, dev=device, host=args.host, port=args.port, stimulus=args.stimulus, ask=ask, out_dir=out_dir, timeout=args.time_out
@@ -239,7 +248,11 @@ async def run(args: argparse.Namespace) -> int:
             ctx.summary.append("AFGEBROKEN: de meting is niet afgemaakt; de regels hierboven zijn onvolledig.")
         if failure:
             ctx.summary.append(failure)
-        log.write("result", command=args.command, interrupted=interrupted, failure=failure, **ctx.result)
+        if ctx.doubts:
+            ctx.summary.append("")
+            ctx.summary.append("Redenen om deze uitkomst te wantrouwen:")
+            ctx.summary.extend(f"  - {doubt}" for doubt in ctx.doubts)
+        log.write("result", command=args.command, interrupted=interrupted, failure=failure, doubts=ctx.doubts, **ctx.result)
         endpoint.close()
         for extra in ctx.extra_endpoints:
             extra.close()
@@ -247,8 +260,13 @@ async def run(args: argparse.Namespace) -> int:
             f"Meetprogramma {__version__}, opdracht '{args.command}', {dt.datetime.now().astimezone().isoformat(timespec='seconds')}",
             f"Opties: {json.dumps(arguments, default=str, ensure_ascii=False)}",
             f"Stimulus: {args.stimulus.label}",
-            "",
         ]
+        if device.latest:
+            status = device.latest
+            header.append(
+                f"Apparaat: model {status.get('D01S05')}, firmware {status.get('D01S12')}, wifi-firmware {status.get('WifiVersion')}"
+            )
+        header.append("")
         text = "\n".join(header + ctx.summary) + "\n"
         (out_dir / "samenvatting.txt").write_text(text, encoding="utf-8")
         log.close()

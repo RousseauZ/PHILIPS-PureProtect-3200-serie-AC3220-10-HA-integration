@@ -1,0 +1,4 @@
+pytest
+# Optional: enables tests/test_interop.py
+aiocoap
+aioairctrl==0.3.1

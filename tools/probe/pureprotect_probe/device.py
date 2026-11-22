@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import crypto
-from .coap import DEFAULT_PORT, GET, POST, Message, MType, build_request, code_text
+from .coap import DEFAULT_PORT, GET, POST, MType, build_request, code_text
 from .endpoint import Addr, Endpoint, Received
 from .eventlog import redact
 
@@ -282,7 +282,11 @@ class Purifier:
             size=received.size,
             decode="err:no_payload",
         )
-        if msg.code >> 5 == 2 and msg.payload:
+        block = msg.block2
+        if block is not None and (block[0] > 0 or block[1]):
+            # Part of a block-wise transfer, which this tool does not reassemble.
+            frame.decode = "err:blockwise"
+        elif msg.code >> 5 == 2 and msg.payload:
             frame.decode, frame.counter, frame.reported = decode_status(msg.payload)
         elif msg.code >> 5 != 2:
             frame.decode = f"err:code_{code_text(msg.code)}"
