@@ -88,12 +88,45 @@ Regel 3 laat zien dat de opdracht uit regel 1 niet is uitgevoerd: na het aanzett
 | Verzoeken met ontvangstbevestiging worden beantwoord | Commando's kunnen met ontvangstbevestiging worden gestuurd, wat verlies op netwerkniveau zichtbaar maakt |
 | De status komt gefragmenteerd aan | Fragmenten moeten tussen Home Assistant en het apparaat worden doorgelaten |
 
+## Functiedekking
+
+Doel: elke functie die het apparaat lokaal prijsgeeft, is beschikbaar in de integratie. Deze tabel houdt bij hoe ver dat is aangetoond op het echte apparaat.
+
+| Functie | Sleutel | Lezen | Bedienen |
+|---|---|---|---|
+| Aan en uit | `D03102` | Gemeten | Gemeten |
+| Kinderslot | `D03103` | Gemeten | Gemeten (alleen met het apparaat aan) |
+| Standen auto, slaap, medium, turbo | `D0310C` | Gemeten (turbo) | Nog te meten |
+| Handmatige snelheden 1 tot 5 | `D0310C` | In de status | Nog te meten |
+| Werkelijk toerental | `D0310D` | Gemeten | Alleen-lezen |
+| Allergie-slaap | `D03115` | In de status | Nog te meten |
+| Auto+ | `D03180` | In de status | Nog te meten |
+| Fijnstof, allergenenindex, temperatuur, vochtigheid | `D03221`, `D03120`, `D03224`, `D03125` | Gemeten | Alleen-lezen |
+| Filter: resterende levensduur en reiniging | `D0540E`, `D05408`, `D0520D`, `D05207` | Gemeten | Terugzetten van de teller: geen methode bekend, nog te zoeken |
+| Pieptoon | `D03130` | In de status | Nog te meten |
+| Timer | `D03110`, `D03211` | In de status | Nog te meten |
+| Sensoren in stand-by | `D03134` | In de status | Nog te meten |
+| Weergegeven index op het display | `D0312A` | In de status | Nog te meten |
+| Drempel voor meldingen in de app | `D0312C` | In de status | Nog te meten |
+| Displayhelderheid | `D03105` | In de status | Nog te meten; op verwante modellen alleen-lezen |
+| Display aan of uit | `D03112` | In de status | Nog te meten |
+| Lampfunctie van de lichtring | `D03135` | In de status | Nog te meten |
+| Lichtscène | `D03137` | In de status | Nog te meten; op verwante modellen niet schrijfbaar |
+| Helderheid van het sfeerlicht | Onbekend | Nog te zoeken | Nog te zoeken |
+| Storing of foutcode | `D03240` | In de status | Alleen-lezen |
+| Wifi-signaal, firmwareversies, looptijd | `rssi`, `D01S12`, `WifiVersion`, `Runtime` | Gemeten | Alleen-lezen |
+
+Niet lokaal beschikbaar, voor zover bekend: het weekschema, de luchtkwaliteit buiten, meldingen op de telefoon, grafieken en firmware-updates. Die lopen via de app en de cloud. Home Assistant heeft daar eigen middelen voor (automatiseringen, geschiedenis, een weerdienst).
+
+Acht sleutels hebben nog geen bekende betekenis: `D03106`, `D0311F`, `D03136`, `D0313B`, `D03182`, `D03R81`, `D05102` en de `D011xx`-reeks. De manier om ze te duiden is meeluisteren terwijl in de Air+ app telkens één instelling wordt gewijzigd.
+
 ## Nog te meten
 
 | Vraag | Opdracht |
 |---|---|
 | Blijft een abonnement ook leveren na lange stilte in stand-by? | `lapse` in stand-by, met de aan/uit-knop als verandering |
 | Welke schrijfopdrachten werken? | `write-matrix` |
+| Welke sleutel hoort bij elke instelling in de app, ook de nog onbekende? | Meeluisteren met `observe` terwijl in de app telkens één instelling wordt gewijzigd |
 | Hoe vernieuw je een abonnement, en met welk kenmerk? | `refresh` |
 | Welke controle blijft antwoorden gedurende uren stilte? | `liveness` in stand-by |
 | Eén of meer abonnees per adres; gedeelde teller? | `second-client` |
