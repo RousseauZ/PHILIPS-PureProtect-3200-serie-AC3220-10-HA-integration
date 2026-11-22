@@ -85,7 +85,6 @@ class Transport:
         self._peer: Addr = (host, port)
         self._udp: asyncio.DatagramTransport | None = None
         self._protocol: _Protocol | None = None
-        self._local_port = 0
         self._mid = random.randrange(0x10000)
         self._pending: dict[bytes, asyncio.Future[Message | None]] = {}
         self._pending_mids: dict[int, bytes] = {}
@@ -101,38 +100,29 @@ class Transport:
 
     @property
     def local_port(self) -> int:
-        """Return the local UDP port, or 0 before the first open."""
-        return self._local_port
+        """Return the local UDP port, or 0 while there is no socket."""
+        udp = self._udp
+        return 0 if udp is None else int(udp.get_extra_info("sockname")[1])
 
     async def open(self) -> None:
-        """Resolve the host and bind the socket; raises OSError on failure.
+        """Resolve the host and bind a socket; raises OSError on failure.
 
-        A reopened transport asks for the port it had before, so that the
-        device keeps seeing the same endpoint and an observation that
-        survived on the device stays valid (design review 13b, issue 13).
-        The caller supplies the deadline.
+        Every open takes a new local port on purpose. The AC3220/10 serves
+        one observer per source address and the newest registration wins
+        (docs/metingen.md, measurement 9), so nothing is left behind on the
+        device, and a registration from a new port is the kind it answers
+        with a status frame (measurement 8). The caller supplies the deadline.
         """
         if self.is_open:
             return
         loop = asyncio.get_running_loop()
         self._peer = await self._resolve(loop)
-        if self._local_port:
-            # close() releases the old socket one loop iteration later.
-            await asyncio.sleep(0)
         protocol = _Protocol(self)
-        try:
-            udp, _ = await loop.create_datagram_endpoint(
-                lambda: protocol, local_addr=(self._bind_host, self._local_port), family=socket.AF_INET
-            )
-        except OSError:
-            if not self._local_port:
-                raise
-            udp, _ = await loop.create_datagram_endpoint(
-                lambda: protocol, local_addr=(self._bind_host, 0), family=socket.AF_INET
-            )
+        udp, _ = await loop.create_datagram_endpoint(
+            lambda: protocol, local_addr=(self._bind_host, 0), family=socket.AF_INET
+        )
         self._udp = udp
         self._protocol = protocol
-        self._local_port = int(udp.get_extra_info("sockname")[1])
 
     async def _resolve(self, loop: asyncio.AbstractEventLoop) -> Addr:
         try:
@@ -271,8 +261,10 @@ class Transport:
             if msg.mtype is MType.CON:
                 self._reply(MType.ACK, msg.mid)
         elif msg.mtype in (MType.CON, MType.NON):
-            # Tells the device to stop serving an observer that no longer
-            # exists (report 6.3; RFC 7641 section 3.6).
+            # Tells a device to stop serving an observer that no longer
+            # exists (report 6.3; RFC 7641 section 3.6). The AC3220/10 was
+            # measured to ignore it (metingen.md, measurement 10); it stays
+            # as the correct and harmless answer for firmware that listens.
             self.counters.unknown_token += 1
             self._reply(MType.RST, msg.mid)
         if stream is not None:

@@ -2,12 +2,15 @@
 
 The defaults follow what was measured on a real AC3220/10 with firmware
 0.2.3 and Wi-Fi ``AWS_Philips_AIR_Combo@86`` (docs/metingen.md, measurements
-1 to 6). Every quirk of other firmware that the research found is a switch,
+1 to 10). Every quirk of other firmware that the research found is a switch,
 so that each one can be exercised without hardware.
 
 Measured and simulated by default:
 
-* a registration is answered only by the next change;
+* one observer per source address, and the newest registration wins;
+* a new registration is answered with a status frame while the device is on
+  (measured: after 0.2 to 1.9 s); a repeated registration of the current
+  observer is not answered; a deregistration and a Reset are ignored;
 * in standby nothing is sent, unless the power key itself changes;
 * settings written in standby are acknowledged and discarded, and a write of
   ``D03102`` = 0 in standby is acknowledged without any frame;
@@ -15,11 +18,13 @@ Measured and simulated by default:
   write of the value it already has;
 * the mode reads -16 while off, and after a mode change the real fan speed
   follows in a frame of its own;
-* every sync returns a new random counter, and a write is accepted only with
-  that counter plus one.
+* every sync returns a new random counter, shared by all clients, and a
+  write is accepted only with that counter plus one.
 
-Not measured, so a guess: read-only keys behave like a same-value write, and
-a write that switches the device on applies the other keys in that message.
+Not measured, so a guess: read-only keys behave like a same-value write, a
+write that switches the device on applies the other keys in that message,
+and a registration with a new token from the same port is answered like one
+from a new port.
 """
 
 from __future__ import annotations
@@ -105,9 +110,15 @@ class FakePurifier(asyncio.DatagramProtocol):
         self.state: dict[str, Any] = dict(DEFAULT_STATE)
 
         # -- measured on the AC3220/10; switch off to simulate other firmware --
+        # "new_observer": a new registration is answered while the device is
+        #     on; a repeated one, and any registration in standby, is not.
         # "on_change": a registration is answered only by the next change.
-        # "immediate": it is answered at once (older firmware).
-        self.answer_registration = "on_change"
+        # "immediate": every registration is answered at once (older firmware).
+        self.answer_registration = "new_observer"
+        self.registration_answer_delay = 0.02  # measured: 0.2 to 1.9 s
+        self.single_observer_per_ip = True  # the newest registration wins
+        self.honour_deregister = False  # Observe: 1 changes nothing
+        self.honour_rst = False  # a Reset on a notification changes nothing
         self.standby_silent = True  # no frames while off, except for the power key
         self.standby_discards_settings = True  # acknowledged, not applied
         self.push_on_same_value = True  # a write of the current value still notifies
@@ -117,10 +128,11 @@ class FakePurifier(asyncio.DatagramProtocol):
 
         # -- quirks found by the research ---------------------------------
         self.lapse_after: float | None = None  # observer expires unless re-registered
-        self.single_observer_per_ip = False  # newest registration wins
-        self.honour_deregister = True
-        self.deregister_ignores_token = False  # Observe: 1 drops every observer of the address
-        self.honour_rst = True
+        # Two ways a firmware could mishandle Observe: 1 (with honour_deregister
+        # for the first): drop every observer of the address, or take it for
+        # a registration of that token.
+        self.deregister_ignores_token = False
+        self.deregister_registers = False
         self.notify_con = False
         self.info_enabled = True
         self.sync_enabled = True
@@ -353,7 +365,7 @@ class FakePurifier(asyncio.DatagramProtocol):
         if observe is None:
             return  # measured: a GET without Observe is never answered
         key: Observer = (sender, msg.token)
-        if observe == 1:
+        if observe == 1 and not self.deregister_registers:
             if self.honour_deregister:
                 if self.deregister_ignores_token:
                     for other in [k for k in self.observers if k[0] == sender]:
@@ -365,11 +377,19 @@ class FakePurifier(asyncio.DatagramProtocol):
             return
         if self.observe_requires_fresh_sync and previous_path != "/sys/dev/sync":
             return
+        is_new = key not in self.observers
         if self.single_observer_per_ip:
             for other in [k for k in self.observers if k[0][0] == sender[0] and k != key]:
                 del self.observers[other]
         self.observers[key] = {"registered": time.monotonic()}
         if self.answer_registration == "immediate":
+            self._send_frame(key, "status")
+        elif self.answer_registration == "new_observer" and is_new:
+            loop = asyncio.get_running_loop()
+            self._timers.append(loop.call_later(self.registration_answer_delay, self._answer_registration, key))
+
+    def _answer_registration(self, key: Observer) -> None:
+        if key in self.observers and (self.is_on or not self.standby_silent):
             self._send_frame(key, "status")
 
     def _handle_control(self, msg: Message, sender: Addr) -> None:

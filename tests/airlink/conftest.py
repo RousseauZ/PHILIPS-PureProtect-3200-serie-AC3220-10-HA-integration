@@ -98,11 +98,13 @@ class Bench:
         return session
 
     async def live(self, **kwargs: Any) -> Session:
-        """Return a started session that has received its first frame."""
+        """Return a started session that has the status of a device that is on.
+
+        Nothing has to change for that: the device answers a new registration.
+        """
+        assert self.fake.is_on, "a device in standby does not answer a registration"
         session = await self.started(**kwargs)
-        await self.until(lambda: bool(self.fake.observers), "the registration never arrived")
-        self.fake.change("D03221", self.fake.state["D03221"] + 1)
-        await self.until(lambda: session.state is SessionState.LIVE, "no frame arrived")
+        await self.until(lambda: session.state is SessionState.LIVE, "the registration was not answered")
         return session
 
     async def settled(self) -> None:

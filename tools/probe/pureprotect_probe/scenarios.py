@@ -699,24 +699,30 @@ async def liveness(ctx: Context, *, duration: float = 7200.0, interval: float = 
         ("ping", lambda: dev.ping(timeout=ctx.timeout)),
     ]
     cycle = 0
-    while loop.time() < end:
-        for name, call in calls:
-            began = loop.time()
-            reply = await call()
-            series[name].append(reply)
-            changes = [f.t for f in dev.frames if not f.identical]
-            silent_for = ctx.log.now() - (changes[-1] if changes else start_time)
-            if silent_for > 120:
-                during_silence[name].append(reply)
-            await asyncio.sleep(max(0.0, step - (loop.time() - began)))
-            if loop.time() >= end:
-                break
-        cycle += 1
-        if refresh == "zelfde" and loop.time() - last_refresh >= 60:
-            last_refresh = loop.time()
-            dev.register(token, what="refresh-same")
-        if cycle % 20 == 0:
-            ctx.say(f"{cycle} rondes, {len(dev.frames)} statusberichten tot nu toe.")
+    stopped_early = False
+    try:
+        while loop.time() < end:
+            for name, call in calls:
+                began = loop.time()
+                reply = await call()
+                series[name].append(reply)
+                changes = [f.t for f in dev.frames if not f.identical]
+                silent_for = ctx.log.now() - (changes[-1] if changes else start_time)
+                if silent_for > 120:
+                    during_silence[name].append(reply)
+                await asyncio.sleep(max(0.0, step - (loop.time() - began)))
+                if loop.time() >= end:
+                    break
+            cycle += 1
+            if refresh == "zelfde" and loop.time() - last_refresh >= 60:
+                last_refresh = loop.time()
+                dev.register(token, what="refresh-same")
+            if cycle % 20 == 0:
+                ctx.say(f"{cycle} rondes, {len(dev.frames)} statusberichten tot nu toe.")
+    except asyncio.CancelledError:
+        stopped_early = True  # Ctrl-C: report what was measured so far
+    if stopped_early:
+        ctx.conclude(f"Voortijdig gestopt na {(ctx.log.now() - start_time) / 60:.0f} minuten; de uitkomsten gelden voor die periode.")
     names = {"sync": "Sync", "info": "Info-aanvraag", "ping": "CoAP-ping"}
     stats = {name: reply_stats(replies) for name, replies in series.items()}
     silence_stats = {name: reply_stats(replies) for name, replies in during_silence.items()}

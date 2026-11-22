@@ -9,6 +9,12 @@ the adjustments that the measurements on a real AC3220/10 asked for
   own and nothing is torn down because the status stream is quiet.
 * "success" is not proof. The device acknowledges writes it discards, so a
   command counts only once a status frame shows its effect.
+
+What the device was measured to do with observers (measurements 8 to 10):
+it serves one observer per source address and the newest registration wins;
+it answers a new registration with a status frame within about 2 s while it
+is on, never in standby, and it does not answer a repeated registration with
+the same token; it ignores a deregistration and a Reset.
 """
 
 from __future__ import annotations
@@ -430,7 +436,9 @@ class Session:
         """Register for status and start supervising; never waits for the device.
 
         The state is OFFLINE until the device answers anything, which a
-        reachable device does within a fraction of a second.
+        reachable device does within a fraction of a second. A device that
+        is on then sends its status within about 2 s (measurement 8); one
+        in standby sends nothing until something changes.
         """
         if self._stopped:
             raise SessionStoppedError("a stopped session cannot be started again")
@@ -438,10 +446,6 @@ class Session:
             return
         self._started = True
         self._started_wall = time.time()
-        # One token for the whole session (rule 5), unless rule 6 replaces it.
-        observation = _Observation(self._transport.new_token(), RefreshMode.SAME_TOKEN, time.monotonic())
-        self._observations.append(observation)
-        self._transport.add_stream(observation.token, functools.partial(self._handle_stream, observation))
         try:
             # Opening the socket also sends the registration (rule 5: always,
             # whether or not any probe gets an answer).
@@ -451,14 +455,17 @@ class Session:
         except BaseException:
             # Cancelled half-way: leave a session that can be started again.
             self._started = False
-            self._observations.remove(observation)
-            self._transport.remove_stream(observation.token)
             raise
         self._spawn(self._run_forever("liveness", self._liveness_step))
         self._spawn(self._run_forever("refresh", self._refresh_step))
 
     async def stop(self) -> None:
-        """Deregister, cancel every task and close the socket; idempotent."""
+        """Deregister, cancel every task and close the socket; idempotent.
+
+        The AC3220/10 ignores the deregistration (measurement 10) and keeps
+        sending to the last observer until another one registers, which is
+        harmless. It is sent for firmware that does listen.
+        """
         if self._stop_done is not None:
             await self._stop_done.wait()
             return
@@ -473,8 +480,7 @@ class Session:
                 await asyncio.gather(*tasks, return_exceptions=True)
             # The lock is only ever held for the bounded time of opening a socket.
             async with self._socket_lock:
-                # Best effort, nothing is awaited: whether the AC3220 honours
-                # a deregistration is not measured yet.
+                # Best effort: nothing is awaited.
                 for observation in self._observations:
                     self._send_deregistration(observation)
         finally:
@@ -539,8 +545,7 @@ class Session:
                 self._counters.socket_recreations += 1
             self._socket_opened = True
             if self._started:
-                # A new socket may be a new endpoint to the device.
-                self._send_registration()
+                self._observe_from_new_endpoint()
             return True
 
     def _handle_socket_error(self, exc: Exception) -> None:
@@ -748,13 +753,31 @@ class Session:
 
     # -- observation (rules 5 and 6) ---------------------------------------
 
+    def _observe_from_new_endpoint(self) -> None:
+        """Start over with a fresh token on a socket that was just opened.
+
+        The token is fixed for as long as the socket lives (rule 5). A new
+        socket is a new endpoint to the device, and a new token makes its
+        registration exactly the kind that was measured to take the stream
+        over and to be answered (measurements 8 and 9). The same token from
+        another port was never tried.
+        """
+        for observation in self._observations:
+            self._transport.remove_stream(observation.token)
+        self._observations = []
+        self._ladder = 0
+        self._register_new_token(RefreshMode.SAME_TOKEN)
+
     def _send_registration(self) -> None:
         """Send the registration for the newest token; no answer is expected.
 
-        On this firmware a registration is answered only by the next change
-        (metingen.md, measurement 2), so waiting for an answer would be the
-        mistake that makes the existing integrations flap.
+        In standby a registration is answered only by the next change, and a
+        repeated one is not answered at all (measurements 2 and 8), so
+        waiting for an answer would be the mistake that makes the existing
+        integrations flap.
         """
+        if not self._observations:
+            return  # no socket yet; opening one registers
         observation = self._observations[-1]
         msg = build_request(MType.NON, GET, self._transport.next_mid(), observation.token, STATUS_PATH, observe=0)
         if self._send(msg):
@@ -806,6 +829,12 @@ class Session:
         self._send_registration()
 
     def _retire(self, observation: _Observation) -> None:
+        """Give up a token; the caller registers the newest one right after.
+
+        The AC3220/10 does not honour a deregistration (measurement 10), and
+        what it does with one instead is not known. Because the newest
+        registration wins there, the registration that follows settles it.
+        """
         self._send_deregistration(observation)
         # From here on the transport answers this token with a Reset.
         self._transport.remove_stream(observation.token)
@@ -815,7 +844,8 @@ class Session:
 
         The same-token refresh was already tried while the command waited,
         so the first step here is a new token, and the next a fresh sync
-        followed by another new token.
+        followed by another new token. On the AC3220/10 a new token replaces
+        the old observer at once (measurement 8).
         """
         self._counters.escalations += 1
         self._ladder = min(self._ladder + 1, 2)
@@ -851,8 +881,6 @@ class Session:
                 for old in older:
                     self._retire(old)
                 self._observations = [newest]
-                # Whether the device matches a deregistration by token or by
-                # address alone is not measured; register again to be safe.
                 self._send_registration()
         self._working_mode = observation.mode
 
@@ -914,15 +942,19 @@ class Session:
     async def request_status(self) -> bool:
         """Ask for a fresh status; True when a frame arrived in time.
 
-        This re-sends the registration, which has no side effect. On the
-        AC3220/10 a registration is answered only by the next change, so
-        False is the normal answer for a device at rest.
+        This registers again with a new token, which changes nothing on the
+        device but the token it reports to. A device that is on answers a
+        new registration within about 2 s; a repeated registration with the
+        same token gets no answer (measurement 8). In standby nothing
+        answers, so False is the normal result for a device that is off.
         """
         self._check_running()
         waiter = _FrameWaiter({})
         self._waiters.append(waiter)
         try:
-            self._request_refresh(force=True)
+            if self._observations:
+                # Not a step on the ladder of rule 6: the label stays.
+                self._register_new_token(self._observations[-1].mode)
             await waiter.wait(self._options.request_status_timeout)
             self._check_running()
             return waiter.matched

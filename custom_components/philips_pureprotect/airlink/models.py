@@ -44,7 +44,9 @@ class SessionOptions:
     # Waits between attempts while OFFLINE (rule 4); the last one repeats.
     offline_backoff: tuple[float, ...] = (10.0, 10.0, 10.0, 30.0, 60.0)
 
-    # Observation (rule 5). The report allows 65-75 s for the interval.
+    # Observation (rule 5). The report allows 65-75 s for the interval. On
+    # the AC3220/10 the refresh is a safety net: a registration kept
+    # delivering for 20 minutes without it (measurement 4).
     refresh_interval: float = 70.0
     # Extra refreshes asked for by frames are spaced at least this far apart,
     # so that a firmware answering every registration with a bad frame cannot
@@ -63,11 +65,13 @@ class SessionOptions:
     confirm_timeout: float = 5.0
     confirm_retry_wait: float = 3.0
 
-    # Identity and status requests. The info resource answered after about
-    # 0.5 s and missed one request in six (metingen.md), hence two attempts.
-    info_timeout: float = 3.0
-    info_attempts: int = 2
-    request_status_timeout: float = 2.0
+    # Identity. The info resource answers after about 0.5 s and often not at
+    # all, more so when asked several times at once (metingen.md, 1 and 11):
+    # a few attempts, one at a time.
+    info_timeout: float = 2.0
+    info_attempts: int = 4
+    # A new registration was answered after 0.2 to 1.9 s (measurement 8).
+    request_status_timeout: float = 3.0
 
     # Local housekeeping.
     socket_timeout: float = 3.0
