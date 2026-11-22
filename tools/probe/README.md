@@ -80,6 +80,18 @@ Alle opties van een opdracht zie je met `python -m pureprotect_probe <opdracht> 
 
 Komt er na een verzoek om op de standknop te drukken geen statusbericht, dan vraagt het programma of je echt hebt gedrukt. Antwoord eerlijk: bij "nee" probeert het programma het nog één keer, en alleen bij "ja" telt "geen bericht" als uitkomst.
 
+## Rondgang door de app
+
+Hiermee koppel je elke instelling in de Air+ app aan een sleutel, ook de instellingen waarvan de sleutel nog onbekend is.
+
+```bash
+python -m pureprotect_probe watch --host <ip>
+```
+
+Zet het apparaat aan, open de Air+ app en wijzig telkens één instelling, met een paar seconden ertussen. Elke wijziging verschijnt direct op je scherm, bijvoorbeeld `D03135: 1 -> 2`. Stop met Ctrl-C; de samenvatting bevat alle gewijzigde sleutels en een tijdlijn. Noteer erbij in welke volgorde je de instellingen hebt gewijzigd.
+
+De meetwaarden die uit zichzelf veranderen (fijnstof, allergenenindex, temperatuur, vochtigheid) worden weggelaten; met `--alles` zie je ze wel.
+
 ## Een verandering uitlokken
 
 Het apparaat stuurt mogelijk alleen een statusbericht als er iets verandert. Veel metingen hebben daarom op vaste momenten een verandering nodig. Er zijn twee manieren:

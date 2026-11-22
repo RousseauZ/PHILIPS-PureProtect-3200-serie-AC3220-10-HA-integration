@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .coap import ALL_COAP_NODES, GET, MType, build_request
-from .device import INFO_PATH, Frame, Purifier, Reply
+from .device import INFO_PATH, NOISE_KEYS, Frame, Purifier, Reply
 from .endpoint import Endpoint, Received
 from .eventlog import EventLog, redact
 
@@ -625,6 +625,60 @@ async def observe(ctx: Context, *, duration: float = 600.0, refresh: str = "geen
     if dev.latest:
         save_status(ctx, dev.latest)
     ctx.result.update(frames=len(frames), per_token=per_token, refreshes=refreshes, undecodable=len(bad), frame_types=kinds)
+
+
+# Measurements that move on their own while the fan runs.
+SENSOR_KEYS = frozenset({"D03221", "D03120", "D03224", "D03125"})
+
+
+async def watch(ctx: Context, *, duration: float = 1800.0, show_all: bool = False) -> None:
+    """Show every changed key live, to map settings in the app to keys."""
+    dev = ctx.dev
+    previous: dict[str, Any] = {}
+    history: dict[str, list[Any]] = {}
+    timeline: list[str] = []
+
+    def on_frame(frame: Frame) -> None:
+        if frame.reported is None:
+            return
+        if not previous:
+            previous.update(frame.reported)
+            ctx.say(f"Eerste statusbericht ontvangen ({len(frame.reported)} sleutels). Wijzig nu telkens één instelling.")
+            return
+        for key, value in frame.reported.items():
+            old = previous.get(key, "(nieuw)")
+            if old == value or key in NOISE_KEYS:
+                continue
+            previous[key] = value
+            if key in SENSOR_KEYS and not show_all:
+                continue
+            history.setdefault(key, [old]).append(value)
+            line = f"{key}: {old} -> {value}"
+            timeline.append(f"{ctx.log.now():7.1f} s  {line}")
+            ctx.say(line)
+
+    dev.on_frame(on_frame)
+    ctx.token = ctx.ep.new_token()
+    dev.register(ctx.token)
+    ctx.say("Meekijken gestart. Komt er geen statusbericht, zet het apparaat dan aan. Stop met Ctrl-C als je klaar bent.")
+    try:
+        await asyncio.sleep(duration)
+    except asyncio.CancelledError:
+        pass  # Ctrl-C is the normal way to end this command
+    if not previous:
+        ctx.conclude("Er is geen statusbericht ontvangen. Stond het apparaat aan?")
+    elif not history:
+        ctx.conclude("Er is geen enkele instelling gewijzigd.")
+    else:
+        ctx.conclude(f"Gewijzigde sleutels ({len(history)}):")
+        for key in sorted(history):
+            ctx.conclude(f"  {key}: " + " -> ".join(str(v) for v in history[key]))
+        ctx.conclude("Tijdlijn:")
+        for line in timeline:
+            ctx.conclude("  " + line)
+    if not show_all:
+        ctx.conclude("Fijnstof, allergenenindex, temperatuur en vochtigheid zijn weggelaten (toon ze met --alles).")
+    ctx.result.update(changed={key: values for key, values in history.items()}, timeline=timeline)
 
 
 async def liveness(ctx: Context, *, duration: float = 7200.0, interval: float = 30.0, refresh: str = "zelfde") -> None:

@@ -147,6 +147,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--vernieuw", choices=["geen", "zelfde", "nieuw"], default="geen", help="het abonnement vernieuwen met hetzelfde of een nieuw kenmerk")
     p.add_argument("--interval", type=float, default=60.0, help="seconden tussen vernieuwingen (standaard 60)")
 
+    p = add("watch", "elke wijziging direct tonen; om instellingen in de app aan sleutels te koppelen")
+    p.add_argument("--duur", type=float, default=1800.0, help="seconden (standaard 1800); stop eerder met Ctrl-C")
+    p.add_argument("--alles", action="store_true", help="ook de meetwaarden tonen (fijnstof, index, temperatuur, vochtigheid)")
+
     p = add("liveness", "sync, info en ping vergelijken als bereikbaarheidscontrole; draai dit met het apparaat in stand-by")
     p.add_argument("--duur", type=float, default=7200.0, help="seconden (standaard 7200)")
     p.add_argument("--interval", type=float, default=30.0, help="seconden per ronde van drie controles (standaard 30)")
@@ -193,6 +197,8 @@ def select(args: argparse.Namespace) -> Callable[[scenarios.Context], Awaitable[
         return lambda ctx: scenarios.status(ctx, wait=args.wacht)
     if command == "observe":
         return lambda ctx: scenarios.observe(ctx, duration=args.duur, refresh=args.vernieuw, interval=args.interval)
+    if command == "watch":
+        return lambda ctx: scenarios.watch(ctx, duration=args.duur, show_all=args.alles)
     if command == "liveness":
         return lambda ctx: scenarios.liveness(ctx, duration=args.duur, interval=args.interval, refresh=args.vernieuw)
     if command == "lapse":
