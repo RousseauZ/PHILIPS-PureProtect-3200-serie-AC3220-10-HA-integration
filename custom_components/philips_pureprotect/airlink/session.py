@@ -690,7 +690,8 @@ class Session:
 
         Works without ``start()``: the request neither registers an observer
         nor touches the counter, so it is safe towards a device that another
-        session already serves (report 6.5).
+        session already serves (report 6.5). It opens the socket, so call
+        ``stop()`` afterwards in that case too.
         """
         if self._stopped:
             raise SessionStoppedError("the session is stopped")

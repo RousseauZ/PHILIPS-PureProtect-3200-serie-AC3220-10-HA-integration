@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from airlink import Diagnostics, RestoredState, Session, SessionOptions, SessionState
+from airlink.transport import Transport
 
 if TYPE_CHECKING:
     from conftest import Bench
@@ -269,6 +270,50 @@ def test_offline_retries_follow_the_backoff(bench: Bench) -> None:
         assert session.state is OFFLINE
 
     bench.run(body, silent=True)
+
+
+def test_start_survives_a_socket_that_cannot_be_opened(bench: Bench, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def body() -> None:
+        real_open = Transport.open
+        failures = 3
+
+        async def flaky_open(transport: Transport) -> None:
+            nonlocal failures
+            if failures > 0:
+                failures -= 1
+                raise OSError("network is unreachable")
+            await real_open(transport)
+
+        monkeypatch.setattr(Transport, "open", flaky_open)
+        session = bench.session(options=bench.options(probe_timeout=0.05, offline_backoff=(0.05,)))
+        await session.start()  # the host has no network yet; this is not an error
+        assert session.state is OFFLINE
+        await bench.until(lambda: session.state is REACHABLE, "the session never got its socket")
+        await bench.until(lambda: bool(bench.fake.observers), "no registration from the new socket")
+        diag = session.diagnostics()
+        assert diag.socket_errors == 3 and diag.socket_recreations == 0
+
+    bench.run(body)
+
+
+def test_local_socket_error_replaces_the_socket(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.options(probe_idle=0.1))
+        endpoint = bench.client_addr()
+        # What asyncio reports when a send fails, for example with ENETUNREACH.
+        protocol = session._transport._protocol
+        assert protocol is not None
+        protocol.error_received(OSError("network is unreachable"))
+        await bench.until(lambda: session.diagnostics().socket_recreations == 1)
+        assert session.diagnostics().socket_errors == 1 and session.state is LIVE
+        # Same local port, so the observation on the device is still ours.
+        registrations = len(fake.registrations)
+        fake.change("D03221", 21)
+        await bench.until(lambda: session.status is not None and session.status["D03221"] == 21)
+        assert bench.client_addr() == endpoint and len(fake.registrations) >= registrations
+
+    bench.run(body)
 
 
 def test_a_failure_in_supervision_is_logged_and_survived(bench: Bench, caplog: pytest.LogCaptureFixture) -> None:

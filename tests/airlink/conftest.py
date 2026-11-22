@@ -17,9 +17,12 @@ from typing import Any
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "custom_components" / "philips_pureprotect"))
+_HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE.parents[1] / "custom_components" / "philips_pureprotect"))
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))  # for fake_purifier, whatever the import mode
 
-from airlink import RestoredState, Session, SessionOptions, SessionState  # noqa: E402
+from airlink import RestoredState, Session, SessionOptions, SessionState, TraceCallback  # noqa: E402
 from airlink.transport import Transport  # noqa: E402
 from fake_purifier import FakePurifier  # noqa: E402
 
@@ -73,15 +76,16 @@ class Bench:
         options: SessionOptions = FAST,
         restored: RestoredState | None = None,
         expected_device_id: str | None = None,
-        port: int | None = None,
+        trace: TraceCallback | None = None,
     ) -> Session:
         """Create a session towards the simulated device; the bench stops it."""
         session = Session(
             "127.0.0.1",
-            port=self.fake.port if port is None else port,
+            port=self.fake.port,
             options=options,
             restored=restored,
             expected_device_id=expected_device_id,
+            trace=trace,
         )
         self._sessions.append(session)
         return session

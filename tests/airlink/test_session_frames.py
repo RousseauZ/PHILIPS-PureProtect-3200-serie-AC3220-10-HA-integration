@@ -361,6 +361,19 @@ def test_listeners_are_called_and_a_failing_one_breaks_nothing(bench: Bench, cap
     bench.run(body)
 
 
+def test_trace_callback_sees_the_datagrams_of_a_session(bench: Bench) -> None:
+    async def body() -> None:
+        seen: list[tuple[str, tuple[str, int], int]] = []
+        session = bench.session(trace=lambda direction, addr, data: seen.append((direction, addr, len(data))))
+        await session.start()
+        await bench.until(lambda: session.available)
+        device = ("127.0.0.1", bench.fake.port)
+        assert ("tx", device) == seen[0][:2], "the registration goes out first"
+        assert any(direction == "rx" and addr == device for direction, addr, _ in seen)
+
+    bench.run(body)
+
+
 def test_diagnostics_are_serialisable(bench: Bench) -> None:
     async def body() -> None:
         import json
