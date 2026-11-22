@@ -1,0 +1,1 @@
+# PHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration
