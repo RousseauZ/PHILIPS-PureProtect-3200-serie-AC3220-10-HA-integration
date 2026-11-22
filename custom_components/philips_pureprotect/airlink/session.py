@@ -595,6 +595,7 @@ class Session:
         self._contacts += 1
         self._last_contact_mono = time.monotonic()
         self._last_contact_wall = time.time()
+        after_misses = self._misses > 0
         self._misses = 0
         self._missed_kinds.clear()
         if not self._started or self._state not in (SessionState.OFFLINE, SessionState.SUSPECT):
@@ -605,7 +606,10 @@ class Session:
             _LOGGER.info("%s: the device answers again", self._host)
         # Rule 4: the cached status is kept, however old it is.
         self._set_state(SessionState.LIVE if self._status_is_live else SessionState.REACHABLE)
-        self._request_refresh()
+        # After missed probes the observer may be gone, so register at once.
+        # The first contact after start() follows its registration within
+        # milliseconds; that one may wait for the usual gap.
+        self._request_refresh(force=after_misses)
         self._start_identity_check()
 
     async def _liveness_step(self) -> None:

@@ -101,6 +101,12 @@ class Bench:
         await self.until(lambda: session.state is SessionState.LIVE, "no frame arrived")
         return session
 
+    async def settled(self) -> None:
+        """Wait until the registrations of a start are out: the one of start()
+        itself and the one that follows the first contact."""
+        await self.until(lambda: len(self.fake.registrations) >= 2, "the start never settled")
+        await asyncio.sleep(0.02)
+
     def transport(self, **kwargs: Any) -> Transport:
         """Create a bare transport towards the simulated device; the bench closes it."""
         transport = Transport("127.0.0.1", self.fake.port, bind_host="127.0.0.1", **kwargs)

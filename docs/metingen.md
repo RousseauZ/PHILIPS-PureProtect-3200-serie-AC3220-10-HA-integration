@@ -107,6 +107,18 @@ Samenhang die de app zelf aanbrengt:
 
 Niet veranderd tijdens de rondgang: `D0312A`, `D0312B`, `D0312C`, `D03106`, `D03136`, `D0313B`, `D03182`, `D03R81`, `D05102` en de `D011xx`-reeks.
 
+### Meting 7: tweede rondgang, licht en display, met toelichting van de eigenaar
+
+| Waarneming | Uitkomst |
+|---|---|
+| `D03112` | Is de schakelaar "Display" in de app. Stond op 0 bij een brandend display en werd 1 bij uitzetten: 0 is aan, 1 is uit |
+| Helderheid van het sfeerlicht | Geen eigen sleutel. Het is `D03105`, met dezelfde vier waarden (automatisch 101, fel 123, laag 115, uit 0), voor elke scène en ook voor de lampfunctie luchtkwaliteit |
+| Helderheid "uit" | Zet telkens ook de lampfunctie uit (`D03135` naar 0) |
+| Een scène of lampfunctie kiezen | Zet de helderheid terug op automatisch (`D03105` naar 101) en de lampfunctie op 2 (sfeerlicht) of 1 (luchtkwaliteit) |
+| De sprong van `D0520D` in meting 6 | Was de knop "filter gereinigd" in de app. De app kan de reinigingsteller dus terugzetten, en dat is lokaal zichtbaar |
+| Meldingen en weekschema wijzigen in de app | Lokaal veranderde er niets |
+| `D0311F` | Werd weer 1, nu op hetzelfde moment als een wijziging van het display, en bleef 1 bij verder schakelen. Hangt dus niet aan het display. Twee verklaringen passen: ongeveer twee minuten na het aanzetten, of een halve minuut op het hoogste toerental |
+
 ## Wat dit vastlegt
 
 | Bevinding | Gevolg voor het ontwerp |
@@ -136,21 +148,20 @@ Doel: elke functie die het apparaat lokaal prijsgeeft, is beschikbaar in de inte
 | Allergie-slaap | `D03115` | Gemeten | Nog te meten |
 | Auto+ | `D03180` | Gemeten | Nog te meten |
 | Fijnstof, allergenenindex, temperatuur, vochtigheid | `D03221`, `D03120`, `D03224`, `D03125` | Gemeten | Alleen-lezen |
-| Filter: resterende levensduur en reiniging | `D0540E`, `D05408`, `D0520D`, `D05207` | Gemeten | De reinigingsteller sprong tijdens de rondgang terug naar de beginwaarde; of dat lokaal te schrijven is, is nog te meten |
+| Filter: resterende levensduur en reiniging | `D0540E`, `D05408`, `D0520D`, `D05207` | Gemeten | De app zet de reinigingsteller terug naar de beginwaarde (gezien: 719 naar 720); of dat lokaal te schrijven is, is nog te meten |
 | Pieptoon | `D03130` | Gemeten | Nog te meten |
 | Timer | `D03110`, `D03211` | Gemeten | Nog te meten |
 | Sensoren in stand-by | `D03134` | Gemeten | Nog te meten |
-| Weergegeven index op het display | `D0312A` | In de status | Nog te meten |
-| Drempel voor meldingen in de app | `D0312C` | In de status | Nog te meten |
-| Helderheid van display en licht | `D03105` | Gemeten | Nog te meten; op verwante modellen alleen-lezen |
-| Schakelaar `D03112` (naam na te vragen) | `D03112` | Gemeten | Nog te meten |
+| Weergegeven index op het display | `D0312A` | In de status; niet als instelling in de app gezien | Nog te meten |
+| Drempel voor meldingen | `D0312C` | In de status; meldingen wijzigen in de app veranderde de waarde niet | Nog te meten |
+| Helderheid van het licht, ook van het sfeerlicht | `D03105` | Gemeten | Nog te meten; op verwante modellen alleen-lezen. De app schrijft "uit" samen met lampfunctie uit |
+| Display aan of uit | `D03112` (0 aan, 1 uit) | Gemeten | Nog te meten |
 | Lampfunctie van de lichtring | `D03135` | Gemeten | Nog te meten |
-| Lichtscène | `D03137` | Gemeten | Nog te meten; op verwante modellen niet schrijfbaar |
-| Helderheid van het sfeerlicht | Geen aparte sleutel gezien; mogelijk dezelfde als `D03105` | Na te vragen | Na te vragen |
+| Lichtscène | `D03137` | Gemeten | Nog te meten; op verwante modellen niet schrijfbaar. De app schrijft een scène samen met helderheid en lampfunctie |
 | Storing of foutcode | `D03240` | In de status | Alleen-lezen |
 | Wifi-signaal, firmwareversies, looptijd | `rssi`, `D01S12`, `WifiVersion`, `Runtime` | Gemeten | Alleen-lezen |
 
-Niet lokaal beschikbaar, voor zover bekend: het weekschema, de luchtkwaliteit buiten, meldingen op de telefoon, grafieken en firmware-updates. Die lopen via de app en de cloud. Home Assistant heeft daar eigen middelen voor (automatiseringen, geschiedenis, een weerdienst).
+Niet lokaal beschikbaar: het weekschema en de instellingen voor meldingen (gemeten: wijzigen in de app verandert lokaal niets), en voor zover bekend ook de luchtkwaliteit buiten, grafieken en firmware-updates. Die lopen via de app en de cloud. Home Assistant heeft daar eigen middelen voor (automatiseringen, geschiedenis, een weerdienst).
 
 Sleutels zonder bekende betekenis: `D03106`, `D0311F`, `D03136`, `D0313B`, `D03182`, `D03R81`, `D05102` en de `D011xx`-reeks. Behalve `D0311F` veranderde geen ervan tijdens de rondgang door de app; het zijn dus vermoedelijk geen instellingen die de gebruiker bedient.
 
@@ -159,7 +170,7 @@ Sleutels zonder bekende betekenis: `D03106`, `D0311F`, `D03136`, `D0313B`, `D031
 | Vraag | Opdracht |
 |---|---|
 | Blijft een abonnement ook leveren na lange stilte in stand-by? | `lapse` in stand-by, met de aan/uit-knop als verandering |
-| Welke schrijfopdrachten werken? | `write-matrix` |
+| Welke schrijfopdrachten werken, ook de combinaties die de app voor het licht gebruikt? | `write-matrix` |
 | Zijn de filtertellers lokaal te schrijven? | Met het apparaat aan `set D0520D=719`, daarna `set D0520D=720` |
 | Hoe vernieuw je een abonnement, en met welk kenmerk? | `refresh` |
 | Welke controle blijft antwoorden gedurende uren stilte? | `liveness` in stand-by |

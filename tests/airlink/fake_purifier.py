@@ -110,6 +110,7 @@ class FakePurifier(asyncio.DatagramProtocol):
         self.silent = False  # drop everything, as if powered off
         self.strict_counter = True
         self.refuse_control = False  # answer "failed" to every write
+        self.fail_next_controls = 0  # answer "failed" to the next writes only
         self.readonly_keys: set[str] = {"D03105", "D03137"}  # acknowledged, then discarded
         self.corrupt_next_frames = 0  # NUL bytes with a valid digest
         self.drop_next_notifications = 0  # change notifications that get lost
@@ -121,12 +122,13 @@ class FakePurifier(asyncio.DatagramProtocol):
         self.echo_delay = 0.0  # seconds between the control answer and the echo
         self.reply_from_other_port = False  # everything leaves from a second socket
 
-        # -- what the device saw -------------------------------------------
+        # -- what arrived at the device, also while it is silent -----------
         self.observers: dict[Observer, dict[str, Any]] = {}
         self.requests: list[tuple[str, str]] = []
         self.registrations: list[Observer] = []
         self.deregistrations: list[Observer] = []
         self.controls: list[dict[str, Any]] = []
+        self.control_envelopes: list[str] = []
         self.datagrams_received = 0
         self.pings_received = 0
         self.syncs_received = 0
@@ -249,30 +251,26 @@ class FakePurifier(asyncio.DatagramProtocol):
             msg = Message.decode(data)
         except CoapError:
             return
+        # The counters say what arrived, also while the device plays dead.
+        self._record(msg, sender)
         if self.silent:
             return
         if msg.code == EMPTY:
             if msg.mtype == MType.CON:
-                self.pings_received += 1
                 if self.ping_enabled:
                     self._send(Message(MType.RST, EMPTY, msg.mid), sender)
             elif msg.mtype == MType.RST:
-                self.resets_received += 1
                 target = self._sent_notifications.pop(msg.mid, None)
                 if target is not None and self.honour_rst:
                     self.observers.pop(target, None)
-            elif msg.mtype == MType.ACK:
-                self.acks_received += 1
             return
         path = msg.uri_path
-        self.requests.append((msg.mtype.name, path))
         previous_path = self._last_path.get(sender)
         self._last_path[sender] = path
         if msg.code == GET and path == "/sys/dev/info":
             if self.info_enabled:
                 self._handle_info(msg, sender)
         elif msg.code == POST and path == "/sys/dev/sync":
-            self.syncs_received += 1
             if self.sync_enabled:
                 self._handle_sync(msg, sender)
         elif msg.code == GET and path == "/sys/dev/status":
@@ -284,6 +282,22 @@ class FakePurifier(asyncio.DatagramProtocol):
             reply_type = MType.ACK if msg.mtype == MType.CON else MType.NON
             mid = msg.mid if msg.mtype == MType.CON else self._next_mid()
             self._send(Message(reply_type, 0x84, mid, msg.token), sender)  # 4.04
+
+    def _record(self, msg: Message, sender: Addr) -> None:
+        if msg.code == EMPTY:
+            if msg.mtype == MType.CON:
+                self.pings_received += 1
+            elif msg.mtype == MType.RST:
+                self.resets_received += 1
+            elif msg.mtype == MType.ACK:
+                self.acks_received += 1
+            return
+        path = msg.uri_path
+        self.requests.append((msg.mtype.name, path))
+        if msg.code == POST and path == "/sys/dev/sync":
+            self.syncs_received += 1
+        elif msg.code == GET and path == "/sys/dev/status" and msg.observe is not None:
+            (self.deregistrations if msg.observe == 1 else self.registrations).append((sender, msg.token))
 
     def _handle_info(self, msg: Message, sender: Addr) -> None:
         if self.drop_next_infos > 0:
@@ -316,7 +330,6 @@ class FakePurifier(asyncio.DatagramProtocol):
             return  # measured: a GET without Observe is never answered
         key: Observer = (sender, msg.token)
         if observe == 1:
-            self.deregistrations.append(key)
             if self.honour_deregister:
                 if self.deregister_ignores_token:
                     for other in [k for k in self.observers if k[0] == sender]:
@@ -324,7 +337,6 @@ class FakePurifier(asyncio.DatagramProtocol):
                 else:
                     self.observers.pop(key, None)
             return
-        self.registrations.append(key)
         if msg.token in self.blocked_tokens:
             return
         if self.observe_requires_fresh_sync and previous_path != "/sys/dev/sync":
@@ -341,11 +353,13 @@ class FakePurifier(asyncio.DatagramProtocol):
             self._respond(msg, sender, json.dumps({"status": status}).encode())
 
         try:
-            counter, plain = crypto.decrypt(msg.payload.decode("ascii"))
+            envelope = msg.payload.decode("ascii")
+            counter, plain = crypto.decrypt(envelope)
             desired = json.loads(plain)["state"]["desired"]
         except (crypto.EnvelopeError, ValueError, KeyError, UnicodeDecodeError):
             answer("failed")
             return
+        self.control_envelopes.append(envelope)
         self.controls.append({k: v for k, v in desired.items() if k not in ("CommandType", "DeviceId", "EnduserId")})
         if self.strict_counter:
             # Accepted only with the counter of the latest sync plus one.
@@ -353,7 +367,8 @@ class FakePurifier(asyncio.DatagramProtocol):
                 answer("failed")
                 return
             self._counter = counter
-        if self.refuse_control:
+        if self.refuse_control or self.fail_next_controls > 0:
+            self.fail_next_controls = max(0, self.fail_next_controls - 1)
             answer("failed")
             return
         before = dict(self.state)
