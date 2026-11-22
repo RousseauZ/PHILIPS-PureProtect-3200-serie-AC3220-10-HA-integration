@@ -73,6 +73,40 @@ Zeven losse `set`-opdrachten achter elkaar.
 
 Regel 3 laat zien dat de opdracht uit regel 1 niet is uitgevoerd: na het aanzetten stond het kinderslot nog uit. De eigenaar zag hetzelfde op het apparaat.
 
+### Meting 6: `watch`, rondgang door de Air+ app
+
+Het meetprogramma luisterde zeven minuten mee terwijl de eigenaar in de app instellingen wijzigde. Het abonnement bleef al die tijd leveren; de app en een lokale client vanaf een ander adres zitten elkaar dus niet in de weg.
+
+| Sleutel | Waargenomen waarden | Betekenis |
+|---|---|---|
+| `D03102` | 0, 1 | Uit, aan |
+| `D0310C` | 0, 17, 19, 18 | Auto, slaap, medium, turbo |
+| `D0310C` | 1, 2, 3, 4, 5 | Handmatige snelheid 1 tot 5 |
+| `D0310C` | -16 | Waarde terwijl het apparaat uit staat |
+| `D0310D` | 1, 2, 3, 4, 18; 0 als het apparaat uit staat | Werkelijk toerental. Snelheid 5 en turbo geven allebei 18; snelheid 3 en medium geven allebei 3; auto en slaap gaven 1 |
+| `D03180` | 0, 1 | Auto+ |
+| `D03115` | 0, 1 | Allergie-slaap |
+| `D03134` | 0, 1 | Sensoren in stand-by |
+| `D03130` | 100, 0 | Pieptoon aan, uit |
+| `D03103` | 0, 1 | Kinderslot |
+| `D03110` | 0; 2 tot 13 | Timer uit; 1 tot 12 uur |
+| `D03211` | 60, 120, tot 720; daarna 719, 718 | Resterende timertijd in minuten. Telt elke minuut af, dus met een lopende timer komt er elke minuut een statusbericht |
+| `D03105` | 101, 123, 115, 0 | Helderheid: automatisch, fel, laag, uit |
+| `D03135` | 0, 1, 2 | Lampfunctie: uit, luchtkwaliteit, sfeerlicht |
+| `D03137` | 1, 2, 3, 4 | Lichtscène |
+| `D03112` | 0, 1 | Een schakelaar in de app; naam nog na te vragen |
+| `D0311F` | 0, 1 | Onbekend. Werd 1 ongeveer 30 s nadat snelheid 5 was gekozen (2 minuten na het aanzetten) en ging terug naar 0 bij het uitzetten |
+| `D0520D` | 719 naar 720 | De teller voor het reinigen van het filter sprong terug naar de beginwaarde; oorzaak nog na te vragen |
+
+Samenhang die de app zelf aanbrengt:
+
+- Helderheid "uit" zette in hetzelfde bericht ook de lampfunctie uit (`D03105` 0 en `D03135` 0).
+- Het kiezen van sfeerlicht zette de helderheid terug op automatisch (`D03105` 101, `D03135` 2) en koos een scène.
+- Uitzetten zette de timer en `D0311F` terug op 0.
+- Na een wijziging van de stand volgt het toerental 0,1 tot 1 s later in een apart bericht.
+
+Niet veranderd tijdens de rondgang: `D0312A`, `D0312B`, `D0312C`, `D03106`, `D03136`, `D0313B`, `D03182`, `D03R81`, `D05102` en de `D011xx`-reeks.
+
 ## Wat dit vastlegt
 
 | Bevinding | Gevolg voor het ontwerp |
@@ -96,29 +130,29 @@ Doel: elke functie die het apparaat lokaal prijsgeeft, is beschikbaar in de inte
 |---|---|---|---|
 | Aan en uit | `D03102` | Gemeten | Gemeten |
 | Kinderslot | `D03103` | Gemeten | Gemeten (alleen met het apparaat aan) |
-| Standen auto, slaap, medium, turbo | `D0310C` | Gemeten (turbo) | Nog te meten |
-| Handmatige snelheden 1 tot 5 | `D0310C` | In de status | Nog te meten |
+| Standen auto, slaap, medium, turbo | `D0310C` | Gemeten | Nog te meten |
+| Handmatige snelheden 1 tot 5 | `D0310C` | Gemeten | Nog te meten |
 | Werkelijk toerental | `D0310D` | Gemeten | Alleen-lezen |
-| Allergie-slaap | `D03115` | In de status | Nog te meten |
-| Auto+ | `D03180` | In de status | Nog te meten |
+| Allergie-slaap | `D03115` | Gemeten | Nog te meten |
+| Auto+ | `D03180` | Gemeten | Nog te meten |
 | Fijnstof, allergenenindex, temperatuur, vochtigheid | `D03221`, `D03120`, `D03224`, `D03125` | Gemeten | Alleen-lezen |
-| Filter: resterende levensduur en reiniging | `D0540E`, `D05408`, `D0520D`, `D05207` | Gemeten | Terugzetten van de teller: geen methode bekend, nog te zoeken |
-| Pieptoon | `D03130` | In de status | Nog te meten |
-| Timer | `D03110`, `D03211` | In de status | Nog te meten |
-| Sensoren in stand-by | `D03134` | In de status | Nog te meten |
+| Filter: resterende levensduur en reiniging | `D0540E`, `D05408`, `D0520D`, `D05207` | Gemeten | De reinigingsteller sprong tijdens de rondgang terug naar de beginwaarde; of dat lokaal te schrijven is, is nog te meten |
+| Pieptoon | `D03130` | Gemeten | Nog te meten |
+| Timer | `D03110`, `D03211` | Gemeten | Nog te meten |
+| Sensoren in stand-by | `D03134` | Gemeten | Nog te meten |
 | Weergegeven index op het display | `D0312A` | In de status | Nog te meten |
 | Drempel voor meldingen in de app | `D0312C` | In de status | Nog te meten |
-| Displayhelderheid | `D03105` | In de status | Nog te meten; op verwante modellen alleen-lezen |
-| Display aan of uit | `D03112` | In de status | Nog te meten |
-| Lampfunctie van de lichtring | `D03135` | In de status | Nog te meten |
-| Lichtscène | `D03137` | In de status | Nog te meten; op verwante modellen niet schrijfbaar |
-| Helderheid van het sfeerlicht | Onbekend | Nog te zoeken | Nog te zoeken |
+| Helderheid van display en licht | `D03105` | Gemeten | Nog te meten; op verwante modellen alleen-lezen |
+| Schakelaar `D03112` (naam na te vragen) | `D03112` | Gemeten | Nog te meten |
+| Lampfunctie van de lichtring | `D03135` | Gemeten | Nog te meten |
+| Lichtscène | `D03137` | Gemeten | Nog te meten; op verwante modellen niet schrijfbaar |
+| Helderheid van het sfeerlicht | Geen aparte sleutel gezien; mogelijk dezelfde als `D03105` | Na te vragen | Na te vragen |
 | Storing of foutcode | `D03240` | In de status | Alleen-lezen |
 | Wifi-signaal, firmwareversies, looptijd | `rssi`, `D01S12`, `WifiVersion`, `Runtime` | Gemeten | Alleen-lezen |
 
 Niet lokaal beschikbaar, voor zover bekend: het weekschema, de luchtkwaliteit buiten, meldingen op de telefoon, grafieken en firmware-updates. Die lopen via de app en de cloud. Home Assistant heeft daar eigen middelen voor (automatiseringen, geschiedenis, een weerdienst).
 
-Acht sleutels hebben nog geen bekende betekenis: `D03106`, `D0311F`, `D03136`, `D0313B`, `D03182`, `D03R81`, `D05102` en de `D011xx`-reeks. De manier om ze te duiden is meeluisteren terwijl in de Air+ app telkens één instelling wordt gewijzigd.
+Sleutels zonder bekende betekenis: `D03106`, `D0311F`, `D03136`, `D0313B`, `D03182`, `D03R81`, `D05102` en de `D011xx`-reeks. Behalve `D0311F` veranderde geen ervan tijdens de rondgang door de app; het zijn dus vermoedelijk geen instellingen die de gebruiker bedient.
 
 ## Nog te meten
 
@@ -126,11 +160,11 @@ Acht sleutels hebben nog geen bekende betekenis: `D03106`, `D0311F`, `D03136`, `
 |---|---|
 | Blijft een abonnement ook leveren na lange stilte in stand-by? | `lapse` in stand-by, met de aan/uit-knop als verandering |
 | Welke schrijfopdrachten werken? | `write-matrix` |
-| Welke sleutel hoort bij elke instelling in de app, ook de nog onbekende? | Meeluisteren met `observe` terwijl in de app telkens één instelling wordt gewijzigd |
+| Zijn de filtertellers lokaal te schrijven? | Met het apparaat aan `set D0520D=719`, daarna `set D0520D=720` |
 | Hoe vernieuw je een abonnement, en met welk kenmerk? | `refresh` |
 | Welke controle blijft antwoorden gedurende uren stilte? | `liveness` in stand-by |
 | Eén of meer abonnees per adres; gedeelde teller? | `second-client` |
 | Wordt afmelden gerespecteerd? | `deregister` |
 | Gedrag na een stroomonderbreking | `power-cycle` |
-| Storen de app en een lokale client elkaar? | `app` |
+| Storen de app en een lokale client elkaar? | Tijdens de rondgang niet; `app` test daarnaast of onze controles de app hinderen |
 | Vindbaar via broadcast of multicast? | `discover` |
