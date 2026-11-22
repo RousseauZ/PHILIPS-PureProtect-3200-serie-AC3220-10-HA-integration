@@ -30,18 +30,21 @@ async def assert_quiet(bench: Bench, duration: float = 0.3) -> None:
     assert bench.fake.datagrams_received == received, "the stopped session still sends"
 
 
-def test_stop_deregisters_cancels_and_closes(bench: Bench) -> None:
+@pytest.mark.parametrize("honoured", [False, True])
+def test_stop_deregisters_cancels_and_closes(bench: Bench, honoured: bool) -> None:
     async def body() -> None:
         fake = bench.fake
+        fake.honour_deregister = honoured
         session = await bench.live(options=bench.options(probe_idle=0.05, refresh_interval=0.05))
         observer = fake.registrations[-1]
         assert other_tasks(), "the supervision is running"
         await session.stop()
         assert not other_tasks(), "a task outlived stop()"
         assert session.state is SessionState.OFFLINE and not session.available
-        # Best-effort deregistration, so that the device stops serving this client.
+        # The deregistration is sent, best effort. The AC3220/10 ignores it
+        # and keeps the observer (measured); other firmware lets go.
         await bench.until(lambda: observer in fake.deregistrations)
-        assert not fake.observers
+        assert (observer not in fake.observers) is honoured
         await assert_quiet(bench)
         # The last status stays readable, for a final snapshot.
         assert session.status is not None and session.snapshot().status == session.status
@@ -123,18 +126,14 @@ def test_stop_ends_a_write_that_waits_for_its_confirmation(bench: Bench) -> None
     async def body() -> None:
         fake = bench.fake
         fake.push_on_same_value = False  # no frame at all after the discarded write
-        options = bench.options(bench.quiet, confirm_timeout=30.0, request_status_timeout=30.0)
-        session = await bench.live(options=options)
+        session = await bench.live(options=bench.options(bench.quiet, confirm_timeout=30.0))
         writing = asyncio.ensure_future(session.write({"D03105": 0}))  # will never be confirmed
-        waiting = asyncio.ensure_future(session.request_status())
         await bench.until(lambda: len(fake.controls) == 1)
         await asyncio.sleep(0.05)
         assert not writing.done()
         await session.stop()
         with pytest.raises(SessionStoppedError):
             await asyncio.wait_for(writing, 1.0)
-        with pytest.raises(SessionStoppedError):
-            await asyncio.wait_for(waiting, 1.0)
         assert not other_tasks()
         assert session.diagnostics().commands_unconfirmed == 0, "a stopped write is not a verdict on the device"
 
@@ -235,5 +234,20 @@ def test_stopped_session_ignores_late_datagrams_and_listeners(bench: Bench) -> N
         fake.change("D03221", 99)
         await asyncio.sleep(0.05)
         assert session.status == before and not calls
+
+    bench.run(body)
+
+
+def test_stop_ends_a_status_request_that_waits_for_a_frame(bench: Bench) -> None:
+    async def body() -> None:
+        bench.fake.power_off(notify=False)  # in standby nothing will answer
+        session = await bench.started(options=bench.options(bench.quiet, request_status_timeout=30.0))
+        waiting = asyncio.ensure_future(session.request_status())
+        await asyncio.sleep(0.05)
+        assert not waiting.done()
+        await session.stop()
+        with pytest.raises(SessionStoppedError):
+            await asyncio.wait_for(waiting, 1.0)
+        assert not other_tasks()
 
     bench.run(body)

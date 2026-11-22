@@ -366,21 +366,20 @@ def test_dead_stream_escalates_to_a_new_token(bench: Bench) -> None:
         assert fake.state["D03103"] == 1, "the device did apply it; only the report is missing"
         diag = session.diagnostics()
         assert diag.escalations == 1 and diag.refresh_mode == "new_token"
-        await bench.until(lambda: fake.registrations[-1][1] != old, "no registration with a new token")
-        new = fake.registrations[-1][1]
-        assert (client, new) in fake.observers and diag.working_refresh_mode == "same_token"
+        assert diag.working_refresh_mode == "same_token"
 
-        # The user tries again: the frame now arrives on the new token.
-        result = await session.write({"D03103": 1})
-        assert not result.resent and session.status is not None and session.status["D03103"] == 1
+        # The registration with a new token is answered, and shows that the write landed.
+        await bench.until(lambda: session.status is not None and session.status["D03103"] == 1)
+        new = fake.registrations[-1][1]
+        assert new != old and list(fake.observers) == [(client, new)]
         diag = session.diagnostics()
         assert diag.working_refresh_mode == "new_token" and diag.escalations == 1
-        # The old token is deregistered now that the new one delivers.
+        # The old token is given up now that the new one delivers.
         await bench.until(lambda: (client, old) in fake.deregistrations)
-        assert (client, new) in fake.observers
 
-        # From here on the new token is the one that is refreshed.
-        assert await session.request_status() is False
+        # Commands are confirmed again, and the new token is the one that is refreshed.
+        result = await session.write({"D03103": 0})
+        assert not result.resent and not result.already_current
         assert fake.registrations[-1] == (client, new)
 
     bench.run(body)
@@ -407,34 +406,11 @@ def test_dead_stream_escalates_to_a_resync(bench: Bench) -> None:
         await bench.until(lambda: bool(fake.observers), "the resync did not bring the observer back")
         assert session.diagnostics().escalations == 2
 
-        result = await session.write({"D03103": 1})
-        assert not result.resent
+        await bench.until(lambda: session.status is not None and session.status["D03103"] == 1)
         assert session.diagnostics().working_refresh_mode == "resync"
         await bench.until(lambda: len(fake.deregistrations) == 2, "both older tokens are given up")
-
-    bench.run(body)
-
-
-def test_escalation_survives_a_device_that_deregisters_by_address(bench: Bench) -> None:
-    async def body() -> None:
-        fake = bench.fake
-        session = await bench.live(options=bench.quiet)
-        await bench.settled()
-        client, old = fake.registrations[-1]
-        fake.reboot()
-        fake.blocked_tokens.add(old)
-        with pytest.raises(NotConfirmedError):
-            await session.write({"D03103": 1})
-        await bench.until(lambda: fake.registrations[-1][1] != old, "no registration with a new token")
-        new = fake.registrations[-1][1]
-
-        # This device drops every observer of an address on any deregistration.
-        fake.deregister_ignores_token = True
-        await session.write({"D03103": 1})
-        await bench.until(lambda: (client, old) in fake.deregistrations)
-        await bench.until(lambda: (client, new) in fake.observers, "the new observer was lost with the old one")
-        fake.change("D03221", 88)
-        await bench.until(lambda: session.status is not None and session.status["D03221"] == 88)
+        result = await session.write({"D03103": 0})
+        assert not result.resent
 
     bench.run(body)
 
@@ -442,10 +418,12 @@ def test_escalation_survives_a_device_that_deregisters_by_address(bench: Bench) 
 def test_unneeded_new_token_is_not_recorded_as_the_working_mode(bench: Bench) -> None:
     async def body() -> None:
         fake = bench.fake
-        # A device that says nothing after a write it discards: the session
+        session = await bench.started(options=bench.quiet)
+        await bench.until(lambda: bool(fake.observers))
+        fake.change("D03221", 60)
+        await bench.until(lambda: session.status_is_live)
+        # This device says nothing after a write it discards. The session
         # cannot tell that from a dead stream and climbs the ladder.
-        fake.push_on_same_value = False
-        session = await bench.live(options=bench.quiet)
         with pytest.raises(NotConfirmedError):
             await session.write({"D03105": 0})
         assert session.diagnostics().escalations == 1
@@ -457,6 +435,29 @@ def test_unneeded_new_token_is_not_recorded_as_the_working_mode(bench: Bench) ->
         diag = session.diagnostics()
         assert diag.working_refresh_mode == "same_token" and diag.refresh_mode == "same_token"
         assert session.status is not None and session.status["D03221"] == 61
-        assert len(fake.observers) == 1
+
+    # Other firmware than the AC3220/10: several observers per address, and
+    # registrations that are answered only by the next change.
+    bench.run(body, single_observer_per_ip=False, answer_registration="on_change", push_on_same_value=False)
+
+
+@pytest.mark.parametrize("quirk", ["deregister_ignores_token", "deregister_registers"])
+def test_giving_up_a_token_survives_a_device_that_mishandles_the_deregistration(bench: Bench, quirk: str) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.quiet)
+        await bench.settled()
+        client, old = fake.registrations[-1]
+        # Two ways a firmware could get Observe: 1 wrong: drop every observer
+        # of the address, or take it for a registration of that token.
+        fake.honour_deregister = True
+        setattr(fake, quirk, True)
+
+        assert await session.request_status() is True  # a new token, the old one is given up
+        await bench.until(lambda: (client, old) in fake.deregistrations)
+        new = fake.registrations[-1][1]
+        await bench.until(lambda: list(fake.observers) == [(client, new)], "the new observer was lost with the old one")
+        fake.change("D03221", 88)
+        await bench.until(lambda: session.status is not None and session.status["D03221"] == 88)
 
     bench.run(body)

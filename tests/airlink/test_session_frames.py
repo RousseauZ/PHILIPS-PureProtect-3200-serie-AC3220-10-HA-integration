@@ -20,13 +20,13 @@ OTHER_DEVICE = "99999999888811ef93334444555566ff"
 def test_registration_is_refreshed_with_the_same_token_without_any_answer(bench: Bench) -> None:
     async def body() -> None:
         fake = bench.fake
-        fake.power_off(notify=False)
-        session = await bench.started(options=bench.options(refresh_interval=0.08))
+        session = await bench.live(options=bench.options(refresh_interval=0.08))
         await bench.until(lambda: len(fake.registrations) >= 6)
-        assert len(set(fake.registrations)) == 1, "one endpoint and one token for the whole session"
-        assert len(fake.observers) == 1 and fake.frames_sent == 0
-        # No answer ever came, and nothing was torn down because of that.
-        assert session.state is REACHABLE
+        assert len(set(fake.registrations)) == 1, "one endpoint and one token for as long as the socket lives"
+        assert len(fake.observers) == 1
+        # Only the first registration was answered; the refreshes were not,
+        # and nothing was torn down because of that.
+        assert fake.frames_sent == 1 and session.state is LIVE
         diag = session.diagnostics()
         assert diag.refreshes_sent >= 5 and diag.socket_recreations == 0 and diag.refresh_mode == "same_token"
 
@@ -38,16 +38,17 @@ def test_device_restart_is_healed_by_the_periodic_refresh(bench: Bench) -> None:
         fake = bench.fake
         # No probe will be sent: only the mandatory refresh can repair this.
         session = await bench.live(options=bench.options(probe_idle=60.0, refresh_interval=0.15))
+        before = dict(session.status or {})
         fake.reboot()
+        fake.state["D03221"] = 77  # and something changed meanwhile
         assert not fake.observers
         await bench.until(lambda: bool(fake.observers), "the refresh did not register again")
-        registrations = len(fake.registrations)
-        fake.change("D03221", 77)
+        # To the restarted device the refresh is a new registration, so it answers.
         await bench.until(lambda: session.status is not None and session.status["D03221"] == 77)
+        assert session.status["Runtime"] < before["Runtime"]
         diag = session.diagnostics()
-        # The fallen Runtime is recognised as a restart and asks for one more registration.
+        # The fallen Runtime is recognised as a restart, not dropped as a stale frame.
         assert diag.device_restarts == 1 and diag.frames_dropped == {}
-        await bench.until(lambda: len(fake.registrations) > registrations)
         assert session.state is LIVE
 
     bench.run(body)
@@ -69,7 +70,8 @@ def test_refresh_takes_the_stream_back_from_another_client(bench: Bench) -> None
         fake = bench.fake
         session = await bench.live(options=bench.options(probe_idle=60.0, refresh_interval=0.15))
         ours = fake.registrations[-1]
-        # Another program on this host registers; on this firmware the newest wins.
+        # Another program on this host registers. Measured: one observer per
+        # address, and the newest wins.
         intruder = bench.transport()
         await intruder.open()
         token = intruder.new_token()
@@ -80,7 +82,7 @@ def test_refresh_takes_the_stream_back_from_another_client(bench: Bench) -> None
         fake.change("D03221", 66)
         await bench.until(lambda: session.status is not None and session.status["D03221"] == 66)
 
-    bench.run(body, single_observer_per_ip=True)
+    bench.run(body)
 
 
 def test_corrupt_frame_is_dropped_and_followed_by_a_refresh(bench: Bench) -> None:
@@ -147,6 +149,7 @@ def test_reordered_older_frame_is_dropped_as_stale(bench: Bench) -> None:
 def test_frame_for_another_device_is_dropped_and_flagged(bench: Bench, caplog: pytest.LogCaptureFixture) -> None:
     async def body() -> None:
         fake = bench.fake
+        fake.power_off(notify=False)
         session = await bench.started(options=bench.quiet, expected_device_id=OTHER_DEVICE)
         notified: list[bool] = []
         session.add_listener(lambda: notified.append(session.identity_mismatch))
@@ -154,7 +157,7 @@ def test_frame_for_another_device_is_dropped_and_flagged(bench: Bench, caplog: p
         assert not session.identity_mismatch
 
         with caplog.at_level(logging.WARNING, logger="airlink"):
-            fake.change("D03221", 9)
+            fake.power_on()
             await bench.until(lambda: session.identity_mismatch)
             fake.change("D03221", 10)
             await bench.until(lambda: session.diagnostics().identity_mismatches == 2)
@@ -219,6 +222,7 @@ def test_datagrams_from_another_address_are_ignored(bench: Bench) -> None:
     async def body() -> None:
         fake = bench.fake
         session = await bench.live(options=bench.quiet)
+        await bench.settled()
         before = dict(session.status or {})
         sent = session.diagnostics().datagrams_sent
 
@@ -275,30 +279,6 @@ def test_identify_reads_the_info_resource(bench: Bench) -> None:
     bench.run(body)
 
 
-def test_request_status_refreshes_and_reports_whether_a_frame_came(bench: Bench) -> None:
-    async def body() -> None:
-        fake = bench.fake
-        session = await bench.live(options=bench.quiet)
-        await bench.settled()
-        registrations = len(fake.registrations)
-        syncs, controls = fake.syncs_received, len(fake.controls)
-
-        # This firmware answers a registration only by the next change.
-        assert await session.request_status() is False
-        assert len(fake.registrations) == registrations + 1
-        assert len(set(fake.registrations)) == 1, "same token"
-
-        # Other firmware answers at once; then this is a poll.
-        fake.answer_registration = "immediate"
-        fake.state["D03221"] = 123  # changed while nobody was told
-        assert await session.request_status() is True
-        assert session.status is not None and session.status["D03221"] == 123
-        # No side effects: no sync, no write.
-        assert fake.syncs_received == syncs and len(fake.controls) == controls
-
-    bench.run(body)
-
-
 def test_snapshot_survives_a_restart(bench: Bench) -> None:
     async def body() -> None:
         fake = bench.fake
@@ -328,6 +308,7 @@ def test_snapshot_survives_a_restart(bench: Bench) -> None:
 def test_listeners_are_called_and_a_failing_one_breaks_nothing(bench: Bench, caplog: pytest.LogCaptureFixture) -> None:
     async def body() -> None:
         fake = bench.fake
+        fake.power_off(notify=False)
         session = bench.session(options=bench.quiet)
         calls: list[tuple[SessionState, int | None]] = []
 
@@ -343,7 +324,8 @@ def test_listeners_are_called_and_a_failing_one_breaks_nothing(bench: Bench, cap
         with caplog.at_level(logging.ERROR, logger="airlink"):
             await bench.until(lambda: calls == [(REACHABLE, None)])
             await bench.until(lambda: bool(fake.observers))
-            fake.change("D03221", 30)
+            fake.state["D03221"] = 30
+            fake.power_on()
             await bench.until(lambda: len(calls) == 2)
             fake.change("D03221", 31)
             await bench.until(lambda: len(calls) == 3)
@@ -384,5 +366,33 @@ def test_diagnostics_are_serialisable(bench: Bench) -> None:
         assert data["state"] == "live" and data["frames_received"] == 1
         assert data["working_refresh_mode"] == "same_token" and data["frames_dropped"] == {}
         assert data["seconds_since_last_frame"] < 5 and data["seconds_since_last_contact"] < 5
+
+    bench.run(body)
+
+
+def test_request_status_registers_anew_and_reports_whether_a_frame_came(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.quiet)
+        await bench.settled()
+        client, token = fake.registrations[-1]
+        syncs, controls = fake.syncs_received, len(fake.controls)
+
+        # While the device is on it answers a new registration: this is a poll.
+        fake.state["D03221"] = 123  # changed while nobody was told
+        assert await session.request_status() is True
+        assert session.status is not None and session.status["D03221"] == 123
+        new_token = fake.registrations[-1][1]
+        assert new_token != token and list(fake.observers) == [(client, new_token)]
+        # No side effects: no sync, no write, and not a step on the recovery ladder.
+        assert fake.syncs_received == syncs and len(fake.controls) == controls
+        diag = session.diagnostics()
+        assert diag.escalations == 0 and diag.refresh_mode == "same_token" and diag.working_refresh_mode == "same_token"
+
+        # In standby nothing answers, and nothing is waited for beyond the deadline.
+        await session.write({"D03102": 0})
+        fake.state["D03221"] = 124
+        assert await session.request_status() is False
+        assert session.status["D03221"] == 123
 
     bench.run(body)

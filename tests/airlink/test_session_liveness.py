@@ -121,8 +121,9 @@ def test_start_never_raises_when_the_device_is_unreachable(bench: Bench) -> None
         assert not fake.observers
 
         fake.silent = False
-        await bench.until(lambda: session.state is REACHABLE)
+        await bench.until(lambda: session.available)
         await bench.until(lambda: bool(fake.observers), "no registration after the device appeared")
+        await bench.until(lambda: session.state is LIVE, "the device is on, so its status should follow")
 
     bench.run(body, silent=True)
 
@@ -132,6 +133,7 @@ def test_offline_needs_enough_silence(bench: Bench) -> None:
         options = bench.options(
             probe_idle=0.05, probe_timeout=0.05, probe_retry=0.05, offline_min_misses=3, offline_min_silence=1.2
         )
+        bench.fake.power_off(notify=False)
         session = await bench.started(options=options)
         seen = record(session)
         bench.fake.silent = True
@@ -152,6 +154,7 @@ def test_offline_needs_enough_misses(bench: Bench) -> None:
         options = bench.options(
             probe_idle=0.05, probe_timeout=0.05, probe_retry=0.15, offline_min_misses=8, offline_min_silence=0.05
         )
+        bench.fake.power_off(notify=False)
         session = await bench.started(options=options)
         seen = record(session)
         bench.fake.silent = True
@@ -174,6 +177,7 @@ def test_offline_needs_the_other_kind_of_probe_to_fail_too(bench: Bench) -> None
         options = bench.options(
             probe_idle=0.1, probe_timeout=0.05, probe_retry=0.1, offline_min_misses=3, offline_min_silence=0.2
         )
+        fake.power_off(notify=False)
         session = await bench.started(options=options)
         seen = record(session)
         at_sync: list[Diagnostics] = []
@@ -230,7 +234,7 @@ def test_recovery_from_offline_keeps_the_status_and_registers_again(bench: Bench
         info = ("NON", "/sys/dev/info")
         await bench.until(lambda: info in fake.requests)
         before = dict(session.status or {})
-        endpoint = bench.client_addr()
+        endpoint, token = fake.registrations[-1]
 
         fake.silent = True
         await bench.until(lambda: session.state is OFFLINE)
@@ -238,20 +242,21 @@ def test_recovery_from_offline_keeps_the_status_and_registers_again(bench: Bench
         assert session.status == before and session.status_is_live
 
         infos = fake.requests.count(info)
-        registrations = len(fake.registrations)
-        fake.reboot()  # the device comes back and remembers no observer
+        fake.reboot()  # the device comes back, remembers no observer...
+        fake.power_off(notify=False)  # ...and is in standby, so it reports nothing
         fake.silent = False
         await bench.until(lambda: session.available)
+        await bench.until(lambda: bool(fake.observers), "no registration after the recovery")
+        await bench.until(lambda: fake.requests.count(info) > infos, "no identity check after the recovery")
         # LIVE, not REACHABLE: the cached status is kept as it was.
         assert session.state is LIVE and session.status == before
-        await bench.until(lambda: bool(fake.observers), "no registration after the recovery")
-        assert len(fake.registrations) > registrations
-        await bench.until(lambda: fake.requests.count(info) > infos, "no identity check after the recovery")
-        # The socket was replaced on entering OFFLINE, on the same local port.
-        assert session.diagnostics().socket_recreations >= 1 and bench.client_addr() == endpoint
+        # The socket was replaced on entering OFFLINE: a new port and a new token.
+        new_endpoint, new_token = next(iter(fake.observers))
+        assert session.diagnostics().socket_recreations >= 1
+        assert new_endpoint != endpoint and new_token != token
 
-        fake.change("D03221", 42)
-        await bench.until(lambda: session.status is not None and session.status["D03221"] == 42)
+        fake.power_on()
+        await bench.until(lambda: session.status is not None and session.status["Runtime"] < before["Runtime"])
         assert session.diagnostics().device_restarts == 1 and not session.identity_mismatch
 
     bench.run(body)
@@ -289,7 +294,7 @@ def test_start_survives_a_socket_that_cannot_be_opened(bench: Bench, monkeypatch
         session = bench.session(options=bench.options(probe_timeout=0.05, offline_backoff=(0.05,)))
         await session.start()  # the host has no network yet; this is not an error
         assert session.state is OFFLINE
-        await bench.until(lambda: session.state is REACHABLE, "the session never got its socket")
+        await bench.until(lambda: session.available, "the session never got its socket")
         await bench.until(lambda: bool(bench.fake.observers), "no registration from the new socket")
         diag = session.diagnostics()
         assert diag.socket_errors == 3 and diag.socket_recreations == 0
@@ -301,18 +306,21 @@ def test_local_socket_error_replaces_the_socket(bench: Bench) -> None:
     async def body() -> None:
         fake = bench.fake
         session = await bench.live(options=bench.options(probe_idle=0.1))
-        endpoint = bench.client_addr()
+        endpoint, token = fake.registrations[-1]
+        frames = session.diagnostics().frames_received
         # What asyncio reports when a send fails, for example with ENETUNREACH.
         protocol = session._transport._protocol
         assert protocol is not None
         protocol.error_received(OSError("network is unreachable"))
         await bench.until(lambda: session.diagnostics().socket_recreations == 1)
         assert session.diagnostics().socket_errors == 1 and session.state is LIVE
-        # Same local port, so the observation on the device is still ours.
-        registrations = len(fake.registrations)
+        # A new endpoint with a new token takes the stream over, and the
+        # device answers it with its status.
+        await bench.until(lambda: session.diagnostics().frames_received == frames + 1)
+        new_endpoint, new_token = next(iter(fake.observers))
+        assert new_endpoint != endpoint and new_token != token and len(fake.observers) == 1
         fake.change("D03221", 21)
         await bench.until(lambda: session.status is not None and session.status["D03221"] == 21)
-        assert bench.client_addr() == endpoint and len(fake.registrations) >= registrations
 
     bench.run(body)
 
@@ -354,3 +362,35 @@ def test_options_reject_nonsense() -> None:
     assert (defaults.sync_timeout, defaults.control_timeout, defaults.write_attempts) == (1.5, 2.0, 3)
     assert (defaults.write_budget, defaults.confirm_settle, defaults.confirm_timeout) == (10.0, 2.0, 5.0)
     assert defaults.confirm_retry_wait == 3.0 and defaults.runtime_stale_window_ms == 10_000
+
+
+def test_device_that_is_on_answers_the_registration(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = bench.session()
+        seen = record(session)
+        await session.start()
+        # Nothing has to change: a new registration is answered while the device is on.
+        await bench.until(lambda: session.state is LIVE, "the registration was not answered")
+        assert session.status is not None and session.status["D03102"] == 1
+        assert fake.frames_sent == 1 and session.diagnostics().frames_received == 1
+        await asyncio.sleep(0)
+        assert [state for state, _ in seen] == [REACHABLE, LIVE]
+
+    bench.run(body)
+
+
+def test_recovery_from_offline_brings_a_fresh_status_when_the_device_is_on(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        options = bench.options(probe_idle=0.05, probe_timeout=0.05, probe_retry=0.05, offline_min_silence=0.3)
+        session = await bench.live(options=options)
+        fake.silent = True
+        await bench.until(lambda: session.state is OFFLINE)
+        fake.state["D03221"] = 87  # changed while the network was down
+        fake.silent = False
+        # The registration from the new socket is a new one, and those are answered.
+        await bench.until(lambda: session.status is not None and session.status["D03221"] == 87)
+        assert session.state is LIVE
+
+    bench.run(body)

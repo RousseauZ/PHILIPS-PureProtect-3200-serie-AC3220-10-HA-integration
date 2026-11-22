@@ -109,6 +109,7 @@ class _Observation:
     token: bytes
     mode: RefreshMode
     created: float
+    registrations: int = 0
     last_frame: float | None = None
 
 
@@ -212,6 +213,7 @@ def _parse_identity(msg: Message) -> Identity | None:
     device_id = data.get("device_id")
     product_id = data.get("product_id")
     # Report 6.5: an answer without both ids is not one of these purifiers.
+    # Measured: a television on the same network answers on this port too.
     if not isinstance(device_id, str) or not device_id or not isinstance(product_id, str) or not product_id:
         return None
 
@@ -504,6 +506,8 @@ class Session:
             except Exception:
                 _LOGGER.exception("%s: the %s loop failed and continues", self._host, name)
                 await asyncio.sleep(self._options.error_pause)
+            # A step that returns without waiting must not starve the loop.
+            await asyncio.sleep(0)
 
     async def _run_once(self, name: str, coro: Coroutine[Any, Any, None]) -> None:
         try:
@@ -776,14 +780,15 @@ class Session:
         waiting for an answer would be the mistake that makes the existing
         integrations flap.
         """
-        if not self._observations:
-            return  # no socket yet; opening one registers
-        observation = self._observations[-1]
-        msg = build_request(MType.NON, GET, self._transport.next_mid(), observation.token, STATUS_PATH, observe=0)
-        if self._send(msg):
-            self._counters.registrations_sent += 1
-            if self._last_registration is not None:
-                self._counters.refreshes_sent += 1
+        # Without a socket there is no observation yet; opening one registers.
+        if self._observations:
+            observation = self._observations[-1]
+            msg = build_request(MType.NON, GET, self._transport.next_mid(), observation.token, STATUS_PATH, observe=0)
+            if self._send(msg):
+                self._counters.registrations_sent += 1
+                if observation.registrations:
+                    self._counters.refreshes_sent += 1
+                observation.registrations += 1
         self._last_registration = time.monotonic()
         self._refresh_pending = False
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import signal
 import sys
 import time
 from collections.abc import Awaitable, Callable
@@ -53,6 +54,10 @@ FAST = SessionOptions(
 # The same, without any periodic traffic: no probes and no refreshes unless
 # something asks for them.
 QUIET = dataclasses.replace(FAST, probe_idle=60.0, refresh_interval=60.0)
+
+
+def _spinning(signum: int, frame: object) -> None:
+    raise AssertionError("the event loop is blocked: something spins without yielding")
 
 
 class Bench:
@@ -156,7 +161,17 @@ class Bench:
             leftover = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
             assert not leftover, f"tasks outlived stop(): {leftover}"
 
-        asyncio.run(main())
+        # A session bug that spins without ever yielding would block the event
+        # loop and with it every asyncio timeout; only a signal gets through.
+        watchdog = hasattr(signal, "SIGALRM")
+        if watchdog:
+            signal.signal(signal.SIGALRM, _spinning)
+            signal.alarm(int(timeout) + 10)
+        try:
+            asyncio.run(main())
+        finally:
+            if watchdog:
+                signal.alarm(0)
 
 
 @pytest.fixture

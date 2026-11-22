@@ -78,10 +78,12 @@ def test_stream_delivers_every_message_for_its_token(bench: Bench) -> None:
         token = transport.new_token()
         transport.add_stream(token, seen.append)
         register(transport, token)
-        await bench.until(lambda: bool(bench.fake.observers))
+        # The device answers a new registration with its status...
+        await bench.until(lambda: len(seen) == 1)
+        # ...and then reports every change.
         bench.fake.change("D03221", 9)
         bench.fake.change("D03221", 10)
-        await bench.until(lambda: len(seen) == 2)
+        await bench.until(lambda: len(seen) == 3)
         assert all(msg.token == token and msg.max_age == 60 for msg in seen)
         assert transport.counters.resets_sent == 0 and transport.counters.acks_sent == 0
 
@@ -96,8 +98,6 @@ def test_confirmable_notification_is_acknowledged(bench: Bench) -> None:
         token = transport.new_token()
         transport.add_stream(token, seen.append)
         register(transport, token)
-        await bench.until(lambda: bool(bench.fake.observers))
-        bench.fake.change("D03221", 9)
         await bench.until(lambda: bench.fake.acks_received == 1)
         assert seen[0].mtype is MType.CON and transport.counters.acks_sent == 1
 
@@ -117,11 +117,12 @@ def test_unknown_token_is_answered_with_a_reset(bench: Bench, confirmable: bool)
         transport.remove_stream(token)
         bench.fake.change("D03221", 9)
         await bench.until(lambda: bench.fake.resets_received == 1)
-        # The device honours the Reset and stops serving that observer.
-        assert not bench.fake.observers
         assert transport.counters.unknown_token == 1 and transport.counters.resets_sent == 1
+        # A firmware that listens stops serving that observer. The AC3220/10
+        # was measured to carry on, which the default of the simulation copies.
+        assert not bench.fake.observers
 
-    bench.run(body)
+    bench.run(body, answer_registration="on_change", honour_rst=True)
 
 
 def test_ping_from_the_device_is_answered_with_a_reset(bench: Bench) -> None:
@@ -183,39 +184,6 @@ def test_trace_sees_both_directions_and_may_fail(bench: Bench) -> None:
     bench.run(body)
 
 
-def test_close_ends_waiting_requests_and_reopen_keeps_the_port(bench: Bench) -> None:
-    async def body() -> None:
-        bench.fake.silent = True
-        transport = bench.transport()
-        await transport.open()
-        port = transport.local_port
-        seen: list[Message] = []
-        token = transport.new_token()
-        transport.add_stream(token, seen.append)
-
-        waiting = asyncio.ensure_future(transport.request(info_request(transport), 5.0))
-        pinging = asyncio.ensure_future(transport.ping(5.0))
-        await asyncio.sleep(0.01)
-        transport.close()
-        assert await waiting is None and await pinging is False
-        assert not transport.is_open
-        with pytest.raises(TransportError):
-            transport.send(Message(MType.CON, EMPTY, 1))
-        with pytest.raises(TransportError):
-            await transport.request(info_request(transport), 1.0)
-
-        # Same endpoint for the device, and the streams are still there.
-        await transport.open()
-        assert transport.is_open and transport.local_port == port
-        bench.fake.silent = False
-        register(transport, token)
-        await bench.until(lambda: bool(bench.fake.observers))
-        bench.fake.change("D03221", 9)
-        await bench.until(lambda: len(seen) == 1)
-
-    bench.run(body)
-
-
 def test_reset_answering_a_request_is_returned(bench: Bench) -> None:
     async def body() -> None:
         transport = bench.transport()
@@ -228,5 +196,37 @@ def test_reset_answering_a_request_is_returned(bench: Bench) -> None:
         bench.fake.send_raw(client, Message(MType.RST, EMPTY, request.mid).encode())
         reply = await waiting
         assert reply is not None and reply.mtype is MType.RST
+
+    bench.run(body)
+
+
+def test_close_ends_waiting_requests_and_reopen_takes_a_new_port(bench: Bench) -> None:
+    async def body() -> None:
+        bench.fake.silent = True
+        transport = bench.transport()
+        assert transport.local_port == 0
+        await transport.open()
+        port = transport.local_port
+        seen: list[Message] = []
+        token = transport.new_token()
+        transport.add_stream(token, seen.append)
+
+        waiting = asyncio.ensure_future(transport.request(info_request(transport), 5.0))
+        pinging = asyncio.ensure_future(transport.ping(5.0))
+        await asyncio.sleep(0.01)
+        transport.close()
+        assert await waiting is None and await pinging is False
+        assert not transport.is_open and transport.local_port == 0
+        with pytest.raises(TransportError):
+            transport.send(Message(MType.CON, EMPTY, 1))
+        with pytest.raises(TransportError):
+            await transport.request(info_request(transport), 1.0)
+
+        # A new endpoint for the device; the streams are still there.
+        await transport.open()
+        assert transport.is_open and transport.local_port not in (0, port)
+        bench.fake.silent = False
+        register(transport, token)
+        await bench.until(lambda: len(seen) == 1)
 
     bench.run(body)
