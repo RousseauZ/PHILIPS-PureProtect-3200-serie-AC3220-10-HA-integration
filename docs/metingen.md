@@ -226,6 +226,7 @@ Sleutels zonder bekende betekenis: `D03106`, `D0311F`, `D03136`, `D0313B`, `D031
 |---|---|
 | Wordt opnieuw abonneren beantwoord, met hetzelfde kenmerk en met een nieuw kenmerk vanaf dezelfde poort? De protocollaag gebruikt een nieuw kenmerk om na een gemist bericht de status op te halen, en leunt dus op een "ja" voor het nieuwe kenmerk. | `refresh`, apparaat aan |
 | Welke schrijfopdrachten werken, ook de combinaties die de app voor het licht gebruikt? | `write-matrix` |
+| Werkt de verbindingslaag van de integratie tegen het echte apparaat: status binnen, een schrijfopdracht bevestigd, geen gemiste controles? | `python ../session_check.py <ip> --set D03103=1 --set D03103=0`, vanuit `tools/probe`, apparaat aan |
 | Neemt het apparaat een stand aan die samen met aanzetten in één opdracht staat, en een instelling die direct achter het aanzetten aan komt? | `write-matrix`, groep `combinatie` |
 | Zijn de filtertellers lokaal te schrijven? | `write-matrix`, groep `filter` |
 | Welke controle blijft antwoorden gedurende uren stilte? | `liveness` in stand-by |

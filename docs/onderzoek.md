@@ -526,15 +526,15 @@ Het programma voert deze reeks uit:
 
 ## 8. Voorgesteld stappenplan
 
-| Stap | Inhoud | Resultaat |
-|---|---|---|
-| 0 | Snelle controle uit 7.1 | Firmware, sleutelset en werkende schrijfopdrachten van jouw apparaat |
-| 1 | Meetprogramma bouwen en de reeks uit 7.2 draaien | Ontwerpkeuzes vastgelegd; de kern van de protocollaag bestaat |
-| 2 | Protocol- en sessiepakket met nagebootst apparaat en tests | Betrouwbare verbinding, los van Home Assistant te testen |
-| 3 | Minimale integratie: instellen met IP-adres, coordinator, ventilator en sensoren | Werkend in je eigen Home Assistant |
-| 4 | Overige entiteiten, diagnostiek, DHCP-herkenning, herconfiguratie, vertalingen | Volledige functionaliteit |
-| 5 | Duurtest van één tot twee weken op je eigen apparaat, met de diagnostiektellers | Aantoonbaar stabiel |
-| 6 | Eerste release met installatielink; kleine verbeteringen aanbieden bij de bestaande projecten | Publiek beschikbaar |
+| Stap | Inhoud | Resultaat | Stand op 23 november 2026 |
+|---|---|---|---|
+| 0 | Snelle controle uit 7.1 | Firmware, sleutelset en werkende schrijfopdrachten van jouw apparaat | Gedaan met het meetprogramma |
+| 1 | Meetprogramma bouwen en de reeks uit 7.2 draaien | Ontwerpkeuzes vastgelegd; de kern van de protocollaag bestaat | Programma klaar. Elf metingen gedaan, zie [metingen.md](metingen.md); daar staat ook wat nog open is |
+| 2 | Protocol- en sessiepakket met nagebootst apparaat en tests | Betrouwbare verbinding, los van Home Assistant te testen | Klaar en door drie controleurs nagelopen; 133 tests. Nog niet tegen het echte apparaat gedraaid |
+| 3 | Minimale integratie: instellen met IP-adres, coordinator, ventilator en sensoren | Werkend in je eigen Home Assistant | Geschreven, samen met stap 4; 41 tests in Home Assistant 2026.11. Nog niet in je eigen Home Assistant gedraaid |
+| 4 | Overige entiteiten, diagnostiek, DHCP-herkenning, herconfiguratie, vertalingen | Volledige functionaliteit | Entiteiten, diagnostiek, herconfiguratie en vertalingen zijn er. Nog niet: DHCP-herkenning, zoeken in het netwerk, knoppen voor de filtertellers |
+| 5 | Duurtest van één tot twee weken op je eigen apparaat, met de diagnostiektellers | Aantoonbaar stabiel | Nog niet begonnen |
+| 6 | Eerste release met installatielink; kleine verbeteringen aanbieden bij de bestaande projecten | Publiek beschikbaar | Nog niet begonnen |
 
 ---
 
@@ -561,6 +561,8 @@ Het programma voert deze reeks uit:
 | Beslissing | Keuze | Datum |
 |---|---|---|
 | Domeinnaam | `philips_pureprotect`, met weergavenaam "Philips PureProtect". Het domein is definitief; de weergavenaam kan later nog wijzigen. | 22 november 2026 |
+| Indeling van de ventilator | Voorlopig variant B uit 6.6: de standen auto en slaap, en vijf snelheden; medium en turbo zijn 60% en 100%. De meting bevestigde dat snelheid 3 en medium, en snelheid 5 en turbo, hetzelfde toerental geven. De tabel is gegevensgestuurd, dus wisselen naar variant A blijft een kleine wijziging. | 23 november 2026, door mij gekozen; jij kunt het nog omdraaien |
+| Licht | Voorlopig drie keuzelijsten (licht, helderheid, scène), geschreven zoals de app dat doet. Definitief na de meting `write-matrix`. | 23 november 2026, voorlopig |
 
 **Beslissingen voor jou:**
 

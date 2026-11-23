@@ -45,6 +45,15 @@ Staat de luchtreiniger tijdens het toevoegen uit, dan zijn de waarden onbekend t
 - [Meetprogramma](tools/probe/README.md): het programma waarmee is gemeten.
 - [Onderzoeksnotities](docs/research/README.md): de onderliggende notities met bronverwijzingen.
 
+## De verbinding proberen zonder Home Assistant
+
+`tools/session_check.py` draait de verbindingslaag van de integratie tegen een echte luchtreiniger en toont elke verandering, de uitkomst van schrijfopdrachten en de tellers. Het heeft alleen het pakket `cryptography` nodig, dat ook het meetprogramma gebruikt.
+
+```bash
+cd tools/probe && . venv/bin/activate
+python ../session_check.py 10.10.10.113 --set D03103=1 --set D03103=0
+```
+
 ## Ontwikkelen
 
 De code bestaat uit twee lagen. `custom_components/philips_pureprotect/airlink` is de protocol- en sessielaag en importeert niets uit Home Assistant. De rest van de map is de Home Assistant-laag.
