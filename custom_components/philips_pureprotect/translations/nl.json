@@ -1,0 +1,168 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Philips PureProtect-luchtreiniger toevoegen",
+        "description": "Vul het adres van de luchtreiniger in je netwerk in. Je vindt het in je router. Geef de luchtreiniger daar een vast adres, zodat hij bereikbaar blijft.",
+        "data": {
+          "host": "IP-adres of hostnaam"
+        },
+        "data_description": {
+          "host": "Bijvoorbeeld 192.168.1.50."
+        }
+      },
+      "reconfigure": {
+        "title": "Adres wijzigen",
+        "description": "Vul het nieuwe adres van de luchtreiniger in. Home Assistant controleert of het hetzelfde apparaat is.",
+        "data": {
+          "host": "IP-adres of hostnaam"
+        },
+        "data_description": {
+          "host": "Bijvoorbeeld 192.168.1.50."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Er antwoordde niets op dit adres. Controleer het adres, en of de luchtreiniger stroom heeft en met je wifi is verbonden.",
+      "not_a_purifier": "Op dit adres antwoordde een apparaat, maar het is geen ondersteunde luchtreiniger."
+    },
+    "abort": {
+      "already_configured": "Deze luchtreiniger is al ingesteld. Het adres is bijgewerkt.",
+      "reconfigure_successful": "Het adres is gewijzigd.",
+      "wrong_device": "Op dit adres antwoordt een andere luchtreiniger. Het adres is niet gewijzigd."
+    }
+  },
+  "entity": {
+    "fan": {
+      "purifier": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "auto": "Auto",
+              "sleep": "Slaap"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "allergen_index": {
+        "name": "Allergenenindex"
+      },
+      "filter_life": {
+        "name": "Resterende levensduur filter"
+      },
+      "filter_cleaning": {
+        "name": "Filter reinigen over"
+      },
+      "error_code": {
+        "name": "Foutcode"
+      },
+      "fan_level": {
+        "name": "Toerentalstand"
+      },
+      "last_status": {
+        "name": "Laatste status ontvangen"
+      },
+      "timer_end": {
+        "name": "Timer loopt af"
+      }
+    },
+    "binary_sensor": {
+      "filter_replace": {
+        "name": "Filter vervangen"
+      },
+      "filter_clean": {
+        "name": "Filter reinigen"
+      }
+    },
+    "switch": {
+      "child_lock": {
+        "name": "Kinderslot"
+      },
+      "beep": {
+        "name": "Pieptoon"
+      },
+      "auto_plus": {
+        "name": "Auto Plus"
+      },
+      "allergy_sleep": {
+        "name": "Allergie-slaap"
+      },
+      "standby_sensors": {
+        "name": "Sensoren in stand-by"
+      },
+      "display": {
+        "name": "Display"
+      }
+    },
+    "select": {
+      "light_mode": {
+        "name": "Licht",
+        "state": {
+          "off": "Uit",
+          "air_quality": "Luchtkwaliteit",
+          "ambient": "Sfeerlicht"
+        }
+      },
+      "light_brightness": {
+        "name": "Helderheid licht",
+        "state": {
+          "auto": "Automatisch",
+          "low": "Laag",
+          "bright": "Fel"
+        }
+      },
+      "light_scene": {
+        "name": "Scène sfeerlicht",
+        "state": {
+          "scene_1": "Scène 1",
+          "scene_2": "Scène 2",
+          "scene_3": "Scène 3",
+          "scene_4": "Scène 4"
+        }
+      },
+      "timer": {
+        "name": "Timer",
+        "state": {
+          "off": "Uit",
+          "hours_1": "1 uur",
+          "hours_2": "2 uur",
+          "hours_3": "3 uur",
+          "hours_4": "4 uur",
+          "hours_5": "5 uur",
+          "hours_6": "6 uur",
+          "hours_7": "7 uur",
+          "hours_8": "8 uur",
+          "hours_9": "9 uur",
+          "hours_10": "10 uur",
+          "hours_11": "11 uur",
+          "hours_12": "12 uur"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "device_off": {
+      "message": "{name} staat uit en negeert instellingen zolang hij uit staat. Zet hem eerst aan."
+    },
+    "refused": {
+      "message": "{name} weigerde de opdracht."
+    },
+    "not_confirmed": {
+      "message": "{name} nam de opdracht aan, maar meldde de wijziging nooit terug."
+    },
+    "unreachable": {
+      "message": "{name} gaf geen antwoord."
+    },
+    "wrong_device": {
+      "message": "Op het adres van {name} antwoordt een ander apparaat. Er is niets verstuurd."
+    }
+  },
+  "issues": {
+    "wrong_device": {
+      "title": "Op het adres van {name} antwoordt een ander apparaat",
+      "description": "Het apparaat op {host} is niet de luchtreiniger die als {name} is ingesteld. Waarschijnlijk is het adres veranderd. Zoek het nieuwe adres op in je router en kies Opnieuw configureren bij de integratie om het in te vullen. Tot die tijd staat de luchtreiniger als niet beschikbaar."
+    }
+  }
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import os
 import socket
 from typing import TYPE_CHECKING, Any
@@ -275,6 +276,10 @@ def test_host_name_is_resolved_at_open_and_again_on_request(bench: Bench) -> Non
     bench.run(body)
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("pytest_homeassistant") is not None,
+    reason="Home Assistant's test plugin replaces name resolution; run this on a plain Python",
+)
 @pytest.mark.parametrize("host", ["purifier..lan", "p" * 64 + ".lan"])
 def test_name_that_cannot_be_encoded_fails_like_one_that_does_not_resolve(bench: Bench, host: str) -> None:
     async def body() -> None:

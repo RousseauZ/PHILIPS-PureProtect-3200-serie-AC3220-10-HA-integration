@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 import socket
 import time
@@ -419,6 +420,10 @@ def test_host_name_is_resolved_again_while_offline(bench: Bench) -> None:
     bench.run(body)
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("pytest_homeassistant") is not None,
+    reason="Home Assistant's test plugin replaces name resolution; run this on a plain Python",
+)
 @pytest.mark.parametrize("host", ["purifier..lan", "p" * 64 + ".lan"])
 def test_start_does_not_raise_for_a_host_name_that_cannot_be_looked_up(
     bench: Bench, host: str, caplog: pytest.LogCaptureFixture

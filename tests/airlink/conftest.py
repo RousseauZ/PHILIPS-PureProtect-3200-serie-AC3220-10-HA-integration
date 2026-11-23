@@ -1,14 +1,15 @@
 """Test bench for the airlink package.
 
 The package is imported as top-level ``airlink``, never through
-``custom_components``: that package's ``__init__`` will import Home
-Assistant, which these tests must not need.
+``custom_components``: that package's ``__init__`` imports Home Assistant,
+which these tests must not need.
 """
 
 from __future__ import annotations
 
 import asyncio
 import dataclasses
+import importlib.util
 import signal
 import sys
 import time
@@ -19,7 +20,15 @@ from typing import Any
 import pytest
 
 _HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parents[1] / "custom_components" / "philips_pureprotect"))
+_PACKAGE = _HERE.parents[1] / "custom_components" / "philips_pureprotect" / "airlink"
+if "airlink" not in sys.modules:
+    # Loaded by path, not by putting the integration's folder on sys.path:
+    # that folder also holds a select.py, which would shadow the standard library.
+    _spec = importlib.util.spec_from_file_location("airlink", _PACKAGE / "__init__.py", submodule_search_locations=[str(_PACKAGE)])
+    assert _spec is not None and _spec.loader is not None
+    _module = importlib.util.module_from_spec(_spec)
+    sys.modules["airlink"] = _module
+    _spec.loader.exec_module(_module)
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))  # for fake_purifier, whatever the import mode
 
@@ -172,6 +181,17 @@ class Bench:
         finally:
             if watchdog:
                 signal.alarm(0)
+
+
+try:
+    import pytest_socket  # noqa: F401
+except ImportError:
+    pass
+else:
+
+    @pytest.fixture(autouse=True)
+    def _allow_sockets(socket_enabled: None) -> None:
+        """Next to Home Assistant's test plugin, which blocks sockets, allow the loopback."""
 
 
 @pytest.fixture

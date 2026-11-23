@@ -1,0 +1,168 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a Philips PureProtect air purifier",
+        "description": "Enter the address of the air purifier on your network. You find it in your router. Give the purifier a fixed address there, so that it stays reachable.",
+        "data": {
+          "host": "IP address or host name"
+        },
+        "data_description": {
+          "host": "For example 192.168.1.50."
+        }
+      },
+      "reconfigure": {
+        "title": "Change the address",
+        "description": "Enter the new address of the air purifier. Home Assistant checks that it is the same device.",
+        "data": {
+          "host": "IP address or host name"
+        },
+        "data_description": {
+          "host": "For example 192.168.1.50."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nothing answered at this address. Check the address, and that the purifier has power and is on your Wi-Fi network.",
+      "not_a_purifier": "A device answered at this address, but it is not a supported air purifier."
+    },
+    "abort": {
+      "already_configured": "This air purifier is already set up. Its address has been updated.",
+      "reconfigure_successful": "The address has been changed.",
+      "wrong_device": "Another air purifier answers at this address. The address was not changed."
+    }
+  },
+  "entity": {
+    "fan": {
+      "purifier": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "auto": "Auto",
+              "sleep": "Sleep"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "allergen_index": {
+        "name": "Allergen index"
+      },
+      "filter_life": {
+        "name": "Filter life remaining"
+      },
+      "filter_cleaning": {
+        "name": "Filter cleaning due in"
+      },
+      "error_code": {
+        "name": "Error code"
+      },
+      "fan_level": {
+        "name": "Fan level"
+      },
+      "last_status": {
+        "name": "Last status received"
+      },
+      "timer_end": {
+        "name": "Timer ends"
+      }
+    },
+    "binary_sensor": {
+      "filter_replace": {
+        "name": "Replace filter"
+      },
+      "filter_clean": {
+        "name": "Clean filter"
+      }
+    },
+    "switch": {
+      "child_lock": {
+        "name": "Child lock"
+      },
+      "beep": {
+        "name": "Beep"
+      },
+      "auto_plus": {
+        "name": "Auto Plus"
+      },
+      "allergy_sleep": {
+        "name": "Allergy sleep"
+      },
+      "standby_sensors": {
+        "name": "Sensors in standby"
+      },
+      "display": {
+        "name": "Display"
+      }
+    },
+    "select": {
+      "light_mode": {
+        "name": "Light",
+        "state": {
+          "off": "Off",
+          "air_quality": "Air quality",
+          "ambient": "Ambient light"
+        }
+      },
+      "light_brightness": {
+        "name": "Light brightness",
+        "state": {
+          "auto": "Automatic",
+          "low": "Low",
+          "bright": "Bright"
+        }
+      },
+      "light_scene": {
+        "name": "Ambient light scene",
+        "state": {
+          "scene_1": "Scene 1",
+          "scene_2": "Scene 2",
+          "scene_3": "Scene 3",
+          "scene_4": "Scene 4"
+        }
+      },
+      "timer": {
+        "name": "Timer",
+        "state": {
+          "off": "Off",
+          "hours_1": "1 hour",
+          "hours_2": "2 hours",
+          "hours_3": "3 hours",
+          "hours_4": "4 hours",
+          "hours_5": "5 hours",
+          "hours_6": "6 hours",
+          "hours_7": "7 hours",
+          "hours_8": "8 hours",
+          "hours_9": "9 hours",
+          "hours_10": "10 hours",
+          "hours_11": "11 hours",
+          "hours_12": "12 hours"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "device_off": {
+      "message": "{name} is switched off and ignores settings while it is off. Switch it on first."
+    },
+    "refused": {
+      "message": "{name} refused the command."
+    },
+    "not_confirmed": {
+      "message": "{name} accepted the command but never reported the change."
+    },
+    "unreachable": {
+      "message": "{name} did not answer."
+    },
+    "wrong_device": {
+      "message": "Another device answers at the address of {name}. Nothing was sent."
+    }
+  },
+  "issues": {
+    "wrong_device": {
+      "title": "Another device answers at the address of {name}",
+      "description": "The device at {host} is not the air purifier that was set up as {name}. Its address has probably changed. Look up the new address in your router and choose Reconfigure on the integration to enter it. Until then the purifier is shown as unavailable."
+    }
+  }
+}
