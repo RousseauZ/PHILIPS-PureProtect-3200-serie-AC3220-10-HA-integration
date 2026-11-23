@@ -24,7 +24,8 @@ Measured and simulated by default:
 Not measured, so a guess: read-only keys behave like a same-value write, a
 write that switches the device on applies the other keys in that message,
 and a registration with a new token from the same port is answered like one
-from a new port.
+from a new port. The last guess has a switch for the other outcome
+(``answer_new_token_on_same_port``), because the session leans on it.
 """
 
 from __future__ import annotations
@@ -116,6 +117,11 @@ class FakePurifier(asyncio.DatagramProtocol):
         # "immediate": every registration is answered at once (older firmware).
         self.answer_registration = "new_observer"
         self.registration_answer_delay = 0.02  # measured: 0.2 to 1.9 s
+        # Not measured: whether a registration with a new token is answered
+        # when it comes from the port that already holds the observation.
+        # Measured is only that it takes the stream over. False simulates a
+        # device that answers a new port only.
+        self.answer_new_token_on_same_port = True
         self.single_observer_per_ip = True  # the newest registration wins
         self.honour_deregister = False  # Observe: 1 changes nothing
         self.honour_rst = False  # a Reset on a notification changes nothing
@@ -378,6 +384,7 @@ class FakePurifier(asyncio.DatagramProtocol):
         if self.observe_requires_fresh_sync and previous_path != "/sys/dev/sync":
             return
         is_new = key not in self.observers
+        from_known_port = any(other[0] == sender for other in self.observers)
         if self.single_observer_per_ip:
             for other in [k for k in self.observers if k[0][0] == sender[0] and k != key]:
                 del self.observers[other]
@@ -385,6 +392,14 @@ class FakePurifier(asyncio.DatagramProtocol):
         if self.answer_registration == "immediate":
             self._send_frame(key, "status")
         elif self.answer_registration == "new_observer" and is_new:
+            if not self.is_on and self.standby_silent:
+                # Measured: a registration made in standby is not answered.
+                # Decided here and not when the answer is due, or a device
+                # that is switched on in between would send two frames: the
+                # report of that change and a late answer nobody measured.
+                return
+            if from_known_port and not self.answer_new_token_on_same_port:
+                return
             loop = asyncio.get_running_loop()
             self._timers.append(loop.call_later(self.registration_answer_delay, self._answer_registration, key))
 

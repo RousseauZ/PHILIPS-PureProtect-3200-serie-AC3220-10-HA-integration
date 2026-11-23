@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from airlink import Diagnostics, RestoredState, Session, SessionOptions, SessionState
 from airlink.coap import Message
 from airlink.transport import Transport
+from fake_purifier import FakePurifier
 
 if TYPE_CHECKING:
     from conftest import Bench
@@ -209,19 +211,99 @@ def test_frames_keep_the_session_live_while_probes_fail(bench: Bench) -> None:
         )
         session = await bench.live(options=options)
         seen = record(session)
+        # The values with which a notification found the session LIVE. Between
+        # two frames the probes fail and it is SUSPECT, so the state of the
+        # moment says little; what the listeners were told does not go away.
+        live_with: list[int] = []
+        session.add_listener(
+            lambda: live_with.append((session.status or {})["D03221"]) if session.state is LIVE else None
+        )
         fake.ping_enabled = False
         fake.sync_enabled = False
         for value in range(100, 108):
             await asyncio.sleep(0.15)
             fake.change("D03221", value)
             await bench.until(lambda: session.status is not None and session.status["D03221"] == fake.state["D03221"])
-            assert session.state is LIVE
+            assert live_with and live_with[-1] == value, "the frame did not bring the session to LIVE"
         diag = session.diagnostics()
         assert diag.probes_missed >= 8, "the probes were supposed to fail"
         assert all(state is not OFFLINE for state, _ in seen) and session.available
 
-        # Without frames the same device is eventually given up.
-        await bench.until(lambda: session.state is OFFLINE)
+        # Without frames the same device is eventually given up. Not for
+        # long: it answers the registration from the new socket, so OFFLINE
+        # is in what the listeners were told, not in the state of any moment.
+        await bench.until(lambda: any(state is OFFLINE for state, _ in seen))
+
+    bench.run(body)
+
+
+def test_suspect_retries_at_the_retry_interval(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        options = bench.options(
+            probe_idle=0.4, probe_timeout=0.02, probe_retry=0.05, offline_min_misses=50, refresh_interval=60.0
+        )
+        session = await bench.started(options=options)
+        fake.silent = True
+        await bench.until(lambda: session.state is SUSPECT)
+        pings, began = fake.pings_received, time.monotonic()
+        await bench.until(lambda: fake.pings_received >= pings + 4)
+        assert time.monotonic() - began < 0.8, "four retries at 0.05 s take 0.2 s; at the idle interval 1.6 s"
+
+    bench.run(body)
+
+
+def test_contact_after_a_missed_probe_registers_again_and_checks_the_identity(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        options = bench.options(
+            probe_idle=0.05, probe_timeout=0.05, probe_retry=0.05, offline_min_misses=50, refresh_interval=60.0
+        )
+        info = ("NON", "/sys/dev/info")
+        session = await bench.live(options=options, expected_device_id=fake.state["DeviceId"])
+        await bench.until(lambda: info in fake.requests)
+        await bench.settled()
+        await asyncio.sleep(0.1)
+        registrations, infos = len(fake.registrations), fake.requests.count(info)
+        fake.silent = True
+        await bench.until(lambda: session.state is SUSPECT)
+        assert len(fake.registrations) == registrations
+        # Report 6.3: contact from OFFLINE or from SUSPECT, both the same.
+        fake.silent = False
+        await bench.until(lambda: session.state is LIVE)
+        await bench.until(lambda: len(fake.registrations) > registrations, "no registration after the miss", 1.5)
+        await bench.until(lambda: fake.requests.count(info) > infos, "no identity check after the miss", 1.5)
+
+    bench.run(body)
+
+
+def test_change_missed_during_a_short_outage_is_fetched_on_the_first_contact(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.options(offline_min_silence=30.0))
+        await bench.settled()
+        client, token = fake.registrations[-1]
+
+        # An outage shorter than what OFFLINE takes: the socket stays, the
+        # device keeps its observer, and the frame of a change is lost.
+        fake.silent = True
+        await bench.until(lambda: session.state is SUSPECT)
+        fake.drop_next_notifications = 1
+        fake.change("D03221", 77)
+        assert fake.drop_next_notifications == 0
+        fake.silent = False
+
+        # The same token would get no answer from a device that still holds
+        # it (measurement 8); a new one makes the registration a new one.
+        await bench.until(
+            lambda: session.status is not None and session.status["D03221"] == 77,
+            "recovered from missed probes and still shows the old status",
+            2.0,
+        )
+        assert session.state is LIVE
+        new = fake.registrations[-1][1]
+        assert new != token and list(fake.observers) == [(client, new)]
+        assert session.diagnostics().socket_recreations == 0
 
     bench.run(body)
 
@@ -276,6 +358,87 @@ def test_offline_retries_follow_the_backoff(bench: Bench) -> None:
         assert session.state is OFFLINE
 
     bench.run(body, silent=True)
+
+
+def test_offline_backoff_repeats_its_last_wait(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = bench.session(options=bench.options(probe_timeout=0.02, offline_backoff=(0.05, 0.3)))
+        await session.start()
+        # 10, 10, 10, 30, 60 s "and then every 60 s".
+        await bench.until(lambda: fake.pings_received == 3)
+        third = time.monotonic()
+        await bench.until(lambda: fake.pings_received == 4)
+        assert time.monotonic() - third >= 0.25, "after the last wait the backoff started over"
+
+    bench.run(body, silent=True)
+
+
+def test_host_name_is_resolved_again_while_offline(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        loop = asyncio.get_running_loop()
+        address = {"purifier.test": "127.0.0.1"}
+        lookups = 0
+
+        async def getaddrinfo(host: str, port: int, **_: Any) -> list[Any]:
+            nonlocal lookups
+            lookups += 1
+            return [(socket.AF_INET, socket.SOCK_DGRAM, 17, "", (address[host], port))]
+
+        loop.getaddrinfo = getaddrinfo  # type: ignore[method-assign]
+        moved = FakePurifier()
+        await loop.create_datagram_endpoint(lambda: moved, local_addr=("127.0.0.2", fake.port))
+        session = Session("purifier.test", port=fake.port, options=bench.fast)
+        try:
+            await session.start()
+            await bench.until(lambda: session.state is LIVE, "the name did not lead to the device")
+            assert lookups == 1, "a session that is not OFFLINE has no reason to ask again"
+
+            fake.silent = True  # the old address is dead
+            await bench.until(lambda: session.state is OFFLINE)
+            await bench.until(lambda: session.diagnostics().socket_recreations == 1)
+            await asyncio.sleep(0.2)
+            assert moved.datagrams_received == 0
+            # A router restart hands the purifier another address, after the
+            # socket was replaced: the name service catches up later.
+            address["purifier.test"] = "127.0.0.2"
+            await bench.until(
+                lambda: session.state is LIVE, "the device answers at the new address of its name and is not asked", 3.0
+            )
+            assert moved.registrations and len(moved.observers) == 1
+            # The socket stayed: it is bound to no address, so it reaches the new one.
+            assert session.diagnostics().socket_recreations == 1
+            received = fake.datagrams_received
+            await asyncio.sleep(0.3)
+            assert fake.datagrams_received == received, "the old address is still asked"
+        finally:
+            await session.stop()
+            moved.close()
+
+    bench.run(body)
+
+
+@pytest.mark.parametrize("host", ["purifier..lan", "p" * 64 + ".lan"])
+def test_start_does_not_raise_for_a_host_name_that_cannot_be_looked_up(
+    bench: Bench, host: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def body() -> None:
+        # An empty or an over-long label: the resolver refuses to encode the
+        # name, with an error that is not an OSError.
+        session = Session(host, port=bench.fake.port, options=bench.options(probe_timeout=0.02))
+        try:
+            with caplog.at_level(logging.ERROR, logger="airlink"):
+                await session.start()
+                await asyncio.sleep(0.3)
+            assert session.state is OFFLINE and not session.available
+            assert session.diagnostics().socket_errors >= 2, "it keeps trying, quietly"
+            assert not [r for r in caplog.records if r.name == "airlink"], "no traceback per attempt"
+            assert await session.identify() is None
+        finally:
+            await session.stop()
+
+    bench.run(body)
 
 
 def test_start_survives_a_socket_that_cannot_be_opened(bench: Bench, monkeypatch: pytest.MonkeyPatch) -> None:

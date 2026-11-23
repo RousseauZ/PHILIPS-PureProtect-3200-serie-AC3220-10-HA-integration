@@ -148,17 +148,29 @@ class RestoredState:
 
 @dataclass(frozen=True, slots=True)
 class WriteResult:
-    """Outcome of a successful write."""
+    """Outcome of a write that did not fail."""
 
     values: Mapping[str, int]
-    # True: the live status already showed these values, so the device's
-    # "success" was the whole confirmation and no frame was awaited.
+    # True: the status already showed these values, so the device's "success"
+    # was the whole confirmation and no frame was awaited. For a setting only
+    # a status received in this session counts; for a switch-off the restored
+    # one does too, because a device in standby answers "success" and then
+    # sends nothing (docs/metingen.md, measurement 5).
     already_current: bool
     # True: the command had to be sent a second time before it was confirmed.
     resent: bool
     # Sync-plus-control attempts used, over both sends.
     attempts: int
     duration: float
+    # True: a newer write asked another value for every key that was still
+    # open in this one, so this one stopped: per key the last value wins
+    # (report 6.4 item 6). It may or may not have reached the device.
+    superseded: bool = False
+    # True: a switch-off was answered with "success" and no frame followed,
+    # which is what a device that already was in standby does. The session
+    # took the answer for the confirmation and set the power key of its
+    # status to 0; no frame ever showed it.
+    assumed_off: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +201,8 @@ class Diagnostics:
     commands_unanswered: int = 0
     commands_unconfirmed: int = 0
     commands_blocked_off: int = 0
+    commands_superseded: int = 0
+    switch_offs_assumed: int = 0
     sync_malformed: int = 0
     socket_recreations: int = 0
     socket_errors: int = 0

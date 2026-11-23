@@ -8,13 +8,22 @@ the adjustments that the measurements on a real AC3220/10 asked for
   nothing at all in standby, so reachability is measured with probes of its
   own and nothing is torn down because the status stream is quiet.
 * "success" is not proof. The device acknowledges writes it discards, so a
-  command counts only once a status frame shows its effect.
+  command counts only once a status frame shows its effect. The one
+  exception is switching off: a device in standby answers "success" to that
+  and sends nothing, so there the answer has to do (measurement 5).
 
 What the device was measured to do with observers (measurements 8 to 10):
 it serves one observer per source address and the newest registration wins;
 it answers a new registration with a status frame within about 2 s while it
 is on, never in standby, and it does not answer a repeated registration with
 the same token; it ignores a deregistration and a Reset.
+
+Not measured yet: whether a registration with a new token from the port that
+already holds the observation is answered directly. Measured is that it
+takes the stream over, and that a registration from a new port is answered.
+Where the session knows that it missed a change it registers with a new
+token, which costs nothing if the device stays silent and brings the status
+if it does not.
 """
 
 from __future__ import annotations
@@ -28,7 +37,7 @@ import logging
 import math
 import os
 import time
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Callable, Coroutine, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeGuard
 
@@ -117,39 +126,101 @@ class _FrameWaiter:
     """Waits for a status frame that shows the expected values."""
 
     def __init__(self, accepted: Mapping[str, frozenset[int]]) -> None:
-        self.accepted = accepted
+        self.accepted = dict(accepted)
         self.frames = 0  # valid frames seen since creation
         self.matched = False
         self.mismatched = False
+        # A newer write took over every key this one waited for.
+        self.superseded = False
         self.stopped = False
         # From this moment on a frame without the expected values counts as
         # an answer too; None means such frames are ignored.
         self.mismatch_after: float | None = None
+        self._latest: Mapping[str, Any] | None = None
         self._event = asyncio.Event()
+
+    @property
+    def settled(self) -> bool:
+        """Return True when nothing is left to wait for, or to send again."""
+        return self.matched or self.superseded
+
+    def _shows(self, reported: Mapping[str, Any]) -> bool:
+        return all(reported.get(key) in values for key, values in self.accepted.items())
 
     def offer(self, reported: Mapping[str, Any], now: float) -> None:
         self.frames += 1
-        if self.matched:
+        self._latest = reported
+        if self.settled:
             return
-        if all(reported.get(key) in values for key, values in self.accepted.items()):
+        if self._shows(reported):
             self.matched = True
             self._event.set()
         elif self.mismatch_after is not None and now >= self.mismatch_after:
             self.mismatched = True
             self._event.set()
 
+    def forget(self, keys: Iterable[str]) -> None:
+        """Stop waiting for keys that a newer write took over."""
+        for key in keys:
+            self.accepted.pop(key, None)
+        if self.settled:
+            return
+        if not self.accepted:
+            self.superseded = True
+        elif self._latest is not None and self._shows(self._latest):
+            # Every frame is a full status: the last one already showed the rest.
+            self.matched = True
+        else:
+            return
+        self._event.set()
+
     def stop(self) -> None:
         self.stopped = True
         self._event.set()
 
     async def wait(self, timeout: float) -> None:
-        """Return once matched, mismatched, stopped or after the timeout."""
-        if self.matched or self.mismatched or self.stopped:
+        """Return once matched, superseded, mismatched, stopped or after the timeout."""
+        if self.settled or self.mismatched or self.stopped:
             return
         self._event.clear()
         with contextlib.suppress(TimeoutError):
             async with asyncio.timeout(timeout):
                 await self._event.wait()
+
+
+@dataclass(slots=True, eq=False)
+class _Write:
+    """One call of ``write()``, from the call until it returns."""
+
+    asked: dict[str, int]  # as validated; for the result and the errors
+    # What is still this call's to send and to see confirmed. It shrinks
+    # when a newer call asks another value for one of the keys.
+    desired: dict[str, int]
+    waiter: _FrameWaiter
+    attempts: int = 0
+    already_current: bool = False
+
+    @property
+    def switches_off(self) -> bool:
+        """Return True for a write of the power key to 0 and nothing else."""
+        return self.desired == {POWER_KEY: 0}
+
+    def yield_to(self, newer: Mapping[str, int]) -> None:
+        """Give up every key for which a newer call asks another value.
+
+        Report 6.4 item 6: per key the last value wins. Without this an
+        unconfirmed write would be sent again seconds after the user chose
+        something else, and put the device back.
+        """
+        taken = [key for key, value in newer.items() if key in self.desired and self.desired[key] != value]
+        if POWER_KEY in taken:
+            # The settings in this call went with the power state it asked for.
+            taken = list(self.desired)
+        if not taken:
+            return
+        for key in taken:
+            del self.desired[key]
+        self.waiter.forget(taken)
 
 
 @dataclass(slots=True)
@@ -166,6 +237,8 @@ class _Counters:
     commands_unanswered: int = 0
     commands_unconfirmed: int = 0
     commands_blocked_off: int = 0
+    commands_superseded: int = 0
+    switch_offs_assumed: int = 0
     sync_malformed: int = 0
     socket_recreations: int = 0
     socket_errors: int = 0
@@ -201,7 +274,17 @@ def _decode_status(msg: Message) -> dict[str, Any]:
     return reported
 
 
+class _OtherDeviceError(Exception):
+    """A readable info answer that cannot come from one of these purifiers."""
+
+
 def _parse_identity(msg: Message) -> Identity | None:
+    """Read an info answer; None when it cannot be read at all.
+
+    Raises _OtherDeviceError for a JSON object without the ids: that is a
+    well-formed answer from something else. Anything unreadable is no
+    verdict, because the purifier itself sends a damaged answer now and then.
+    """
     if code_class(msg.code) != 2:
         return None
     try:
@@ -215,7 +298,7 @@ def _parse_identity(msg: Message) -> Identity | None:
     # Report 6.5: an answer without both ids is not one of these purifiers.
     # Measured: a television on the same network answers on this port too.
     if not isinstance(device_id, str) or not device_id or not isinstance(product_id, str) or not product_id:
-        return None
+        raise _OtherDeviceError
 
     def text(key: str) -> str:
         value = data.get(key)
@@ -278,6 +361,10 @@ class Session:
         # One lock around sync-then-control: a second sync in between would
         # invalidate the counter the control message was encrypted with.
         self._exchange_lock = asyncio.Lock()
+        # Every write() between its call and its return, oldest first.
+        self._writes: list[_Write] = []
+        # Set whenever the power state or the list of writes may have changed.
+        self._power_wake = asyncio.Event()
 
         self._contacts = 0
         self._last_contact_mono: float | None = None
@@ -292,10 +379,13 @@ class Session:
         self._observations: list[_Observation] = []
         self._last_registration: float | None = None
         self._refresh_pending = False
+        # The next extra registration takes a new token: a change was missed.
+        self._refresh_afresh = False
         self._refresh_wake = asyncio.Event()
         self._ladder = 0
         self._working_mode: RefreshMode | None = None
         self._last_runtime: int | None = None
+        self._last_runtime_mono = 0.0
         self._waiters: list[_FrameWaiter] = []
 
         self._counters = _Counters()
@@ -332,7 +422,10 @@ class Session:
     def status(self) -> dict[str, Any] | None:
         """Return the last known full status; do not modify it.
 
-        This is the restored status until the first live frame arrives.
+        This is the restored status until the first live frame arrives. It
+        is what the device last sent, with one exception: after a switch-off
+        that the device accepted without sending anything, the power key is
+        set to 0 (see ``WriteResult.assumed_off``).
         """
         return self._status
 
@@ -348,7 +441,11 @@ class Session:
 
     @property
     def identity(self) -> Identity | None:
-        """Return the last answer of the info resource, if any."""
+        """Return the last answer of the info resource, if it was a purifier's.
+
+        None before the first answer, and again after an answer that cannot
+        come from one of these purifiers.
+        """
         return self._identity
 
     @property
@@ -356,9 +453,13 @@ class Session:
         """Return True while another device answers at this address.
 
         Set when a status frame or the info resource shows a device id other
-        than the expected one, cleared when the expected id is seen again.
-        The session keeps running and does not block commands; the caller
-        decides what to do (report 6.3: show a repair issue).
+        than the expected one, or when the info resource is answered without
+        any id (measured: a television does that on this port). Cleared when
+        the expected id is seen again. An info request that stays unanswered
+        changes nothing. The session keeps running and does not block
+        commands; the caller decides what to do (report 6.3: show a repair
+        issue). While the flag is up, ``available`` only says that something
+        answers at the address.
         """
         return self._identity_mismatch
 
@@ -421,6 +522,8 @@ class Session:
             commands_unanswered=counters.commands_unanswered,
             commands_unconfirmed=counters.commands_unconfirmed,
             commands_blocked_off=counters.commands_blocked_off,
+            commands_superseded=counters.commands_superseded,
+            switch_offs_assumed=counters.switch_offs_assumed,
             sync_malformed=counters.sync_malformed,
             socket_recreations=counters.socket_recreations,
             socket_errors=counters.socket_errors,
@@ -449,15 +552,20 @@ class Session:
         self._started = True
         self._started_wall = time.time()
         try:
-            # Opening the socket also sends the registration (rule 5: always,
-            # whether or not any probe gets an answer).
-            await self._ensure_socket()
+            opened = await self._ensure_socket()
         except SessionStoppedError:
             return  # stop() won the race
         except BaseException:
             # Cancelled half-way: leave a session that can be started again.
             self._started = False
             raise
+        if self._stopped:
+            return  # stop() ran while no socket could be opened; it left nothing to supervise
+        if opened and not self._observations:
+            # Rule 5: the registration always goes out, whether or not any
+            # probe gets an answer. A socket opened here has sent it already;
+            # one that identify() opened earlier has not.
+            self._observe_from_new_endpoint()
         self._spawn(self._run_forever("liveness", self._liveness_step))
         self._spawn(self._run_forever("refresh", self._refresh_step))
 
@@ -476,6 +584,7 @@ class Session:
         try:
             for waiter in self._waiters:
                 waiter.stop()
+            self._power_wake.set()
             while tasks := [task for task in self._tasks if task is not asyncio.current_task()]:
                 for task in tasks:
                     task.cancel()
@@ -509,9 +618,12 @@ class Session:
             # A step that returns without waiting must not starve the loop.
             await asyncio.sleep(0)
 
-    async def _run_once(self, name: str, coro: Coroutine[Any, Any, None]) -> None:
+    async def _run_once(self, name: str, work: Callable[[], Coroutine[Any, Any, object]]) -> None:
+        # The coroutine is made here, inside the task: one handed in from
+        # outside would never be awaited when stop() cancels the task before
+        # its first step, and Python warns about that.
         try:
-            await coro
+            await work()
         except SessionStoppedError:
             return
         except Exception:
@@ -625,10 +737,13 @@ class Session:
             _LOGGER.info("%s: the device answers again", self._host)
         # Rule 4: the cached status is kept, however old it is.
         self._set_state(SessionState.LIVE if self._status_is_live else SessionState.REACHABLE)
-        # After missed probes the observer may be gone, so register at once.
-        # The first contact after start() follows its registration within
-        # milliseconds; that one may wait for the usual gap.
-        self._request_refresh(force=after_misses)
+        # After missed probes the observer may be gone and changes may have
+        # been missed, so register at once, and with a new token: if the
+        # device still holds the old one it would not answer that
+        # (measurement 8). The first contact after start() follows its
+        # registration within milliseconds; that one may wait for the usual
+        # gap and keeps its token.
+        self._request_refresh(force=after_misses, afresh=after_misses)
         self._start_identity_check()
 
     async def _liveness_step(self) -> None:
@@ -649,6 +764,10 @@ class Session:
     async def _probe_round(self) -> None:
         opts = self._options
         was_offline = self._state is SessionState.OFFLINE
+        if was_offline and self._offline_attempt:
+            # Not on the first attempt: the socket was opened just before
+            # it, and that looked the name up.
+            await self._follow_host_name()
         self._last_probe = time.monotonic()
         if await self._probe(_ProbeKind.PING):
             return
@@ -678,6 +797,28 @@ class Session:
         backoff = opts.offline_backoff
         self._next_offline_probe = now + backoff[min(self._offline_attempt, len(backoff) - 1)]
         self._offline_attempt += 1
+
+    async def _follow_host_name(self) -> None:
+        """Look the host name up again while OFFLINE; an address is left alone.
+
+        The socket is replaced once, on entering OFFLINE, and that is often
+        too early: the router that caused the outage is still coming back
+        and hands the device another address afterwards.
+        """
+        try:
+            async with self._socket_lock, asyncio.timeout(self._options.socket_timeout):
+                if self._stopped:
+                    raise SessionStoppedError("the session is stopped")
+                if not self._transport.is_open:
+                    return  # opening the socket resolves the name anyway
+                moved = await self._transport.resolve_again()
+        except (OSError, TimeoutError) as err:
+            _LOGGER.debug("%s: cannot resolve the name: %r", self._host, err)
+            return
+        if moved:
+            _LOGGER.info("%s: the name leads to another address now", self._host)
+            # To the device at that address this is an endpoint it never saw.
+            self._observe_from_new_endpoint()
 
     async def _probe(self, kind: _ProbeKind) -> bool:
         """Send one probe; True when the device made contact in its window."""
@@ -710,7 +851,12 @@ class Session:
         Works without ``start()``: the request neither registers an observer
         nor touches the counter, so it is safe towards a device that another
         session already serves (report 6.5). It opens the socket, so call
-        ``stop()`` afterwards in that case too.
+        ``stop()`` afterwards in that case too; a ``start()`` that follows
+        uses that socket and registers on it.
+
+        With an expected device id, an answer from something else raises
+        ``identity_mismatch``: another id, or no id at all. No answer, or one
+        that cannot be read, changes nothing.
         """
         if self._stopped:
             raise SessionStoppedError("the session is stopped")
@@ -719,7 +865,16 @@ class Session:
             if not await self._ensure_socket():
                 return None
             reply = await self._request(GET, INFO_PATH, b"", opts.info_timeout)
-            identity = _parse_identity(reply) if reply is not None else None
+            if reply is None:
+                continue
+            try:
+                identity = _parse_identity(reply)
+            except _OtherDeviceError:
+                # Something else has this address now. That is an answer, not
+                # a missing one: asking again would not change it.
+                self._identity = None
+                self._judge_device_id(None)
+                return None
             if identity is None:
                 continue
             self._identity = identity
@@ -730,19 +885,22 @@ class Session:
     def _start_identity_check(self) -> None:
         if self._expected_id is None or self._identity_task is not None:
             return
-        self._identity_task = self._spawn(self._run_once("the identity check", self._check_identity()))
+        task = self._spawn(self._run_once("the identity check", self.identify))
+        self._identity_task = task
+        task.add_done_callback(self._identity_checked)
 
-    async def _check_identity(self) -> None:
-        try:
-            await self.identify()
-        finally:
+    def _identity_checked(self, task: asyncio.Task[None]) -> None:
+        if self._identity_task is task:
             self._identity_task = None
 
-    def _judge_device_id(self, device_id: str) -> bool:
-        """Compare with the expected device; returns False on a mismatch."""
+    def _judge_device_id(self, device_id: str | None) -> bool:
+        """Compare with the expected device; returns False on a mismatch.
+
+        None stands for an answer that carries no device id at all.
+        """
         if self._expected_id is None:
             return True
-        if device_id.casefold() == self._expected_id.casefold():
+        if device_id is not None and device_id.casefold() == self._expected_id.casefold():
             if self._identity_mismatch:
                 self._identity_mismatch = False
                 _LOGGER.info("%s: the expected device answers again", self._host)
@@ -780,6 +938,11 @@ class Session:
         waiting for an answer would be the mistake that makes the existing
         integrations flap.
         """
+        if not self._observations and self._started and self._transport.is_open:
+            # A socket without an observation: make the first one, which
+            # comes back here to send it.
+            self._observe_from_new_endpoint()
+            return
         # Without a socket there is no observation yet; opening one registers.
         if self._observations:
             observation = self._observations[-1]
@@ -791,24 +954,51 @@ class Session:
                 observation.registrations += 1
         self._last_registration = time.monotonic()
         self._refresh_pending = False
+        self._refresh_afresh = False
+
+    def _register_afresh(self) -> None:
+        """Register with a new token, to be sent the status if the device is on.
+
+        A repeated registration with the same token gets no answer while the
+        device still holds it (measurement 8). A new token takes the stream
+        over at once (measured) and makes the registration a new one, the
+        kind that was answered within 2 s when it came from a new port.
+        Whether it is answered from the same port is not measured yet; if
+        not, nothing is lost but the answer. In standby nothing answers.
+
+        Not a step on the ladder of rule 6: the label stays.
+        """
+        if self._observations:
+            self._register_new_token(self._observations[-1].mode)
+        else:
+            self._send_registration()
 
     def _send_deregistration(self, observation: _Observation) -> None:
         self._send(build_request(MType.NON, GET, self._transport.next_mid(), observation.token, STATUS_PATH, observe=1))
 
-    def _request_refresh(self, *, force: bool = False) -> None:
+    def _request_refresh(self, *, force: bool = False, afresh: bool = False) -> None:
         """Ask for an extra registration (rule 5).
 
         Unless forced it keeps ``refresh_min_gap`` to the previous one; the
-        refresh loop then sends it as soon as the gap has passed.
+        refresh loop then sends it as soon as the gap has passed. With
+        ``afresh`` it takes a new token: a change is known to be missed, and
+        that is the registration a running device may answer.
         """
         if not self._started or self._stopped:
             return
+        self._refresh_afresh = self._refresh_afresh or afresh
         last = self._last_registration
         if force or last is None or time.monotonic() - last >= self._options.refresh_min_gap:
-            self._send_registration()
+            self._send_refresh()
         else:
             self._refresh_pending = True
             self._refresh_wake.set()
+
+    def _send_refresh(self) -> None:
+        if self._refresh_afresh:
+            self._register_afresh()
+        else:
+            self._send_registration()
 
     async def _refresh_step(self) -> None:
         opts = self._options
@@ -818,7 +1008,9 @@ class Session:
         if due <= now:
             # Rule 5: mandatory, also when everything looks fine. It is the
             # only repair after a short device restart or an evicted observer.
-            self._send_registration()
+            # The periodic one keeps its token; only a missed change asks
+            # for a new one.
+            self._send_refresh()
             return
         self._refresh_wake.clear()
         with contextlib.suppress(TimeoutError):
@@ -857,7 +1049,7 @@ class Session:
         if self._ladder == 1:
             self._register_new_token(RefreshMode.NEW_TOKEN)
         else:
-            self._spawn(self._run_once("the resync", self._resync_and_register()))
+            self._spawn(self._run_once("the resync", self._resync_and_register))
 
     async def _resync_and_register(self) -> None:
         opts = self._options
@@ -901,7 +1093,9 @@ class Session:
             self._dropped[err.reason] = self._dropped.get(err.reason, 0) + 1
             _LOGGER.debug("%s: status frame dropped: %s", self._host, err.reason)
             if err.missed_change:
-                self._request_refresh()
+                # The device holds this observer, so it would not answer the
+                # same token again: ask with a new one.
+                self._request_refresh(afresh=True)
             return
         self._accept_frame(observation, reported)
 
@@ -911,8 +1105,17 @@ class Session:
             raise _FrameError("identity_mismatch", missed_change=False)
         runtime = reported.get(RUNTIME_KEY)
         last = self._last_runtime
-        if _is_int(runtime) and last is not None and 0 < last - runtime < self._options.runtime_stale_window_ms:
-            # Slightly older than what is already applied: a reordered frame.
+        window = self._options.runtime_stale_window_ms
+        if (
+            _is_int(runtime)
+            and last is not None
+            and 0 < last - runtime < window
+            and (time.monotonic() - self._last_runtime_mono) * 1000 < window
+        ):
+            # Slightly older than what is already applied, and right behind
+            # it: a reordered frame. Reordering cannot span more time than
+            # the window; a lower uptime that arrives later is a restart
+            # soon after the previous one, and that frame is the new truth.
             raise _FrameError("stale", missed_change=False)
 
     def _accept_frame(self, observation: _Observation, reported: dict[str, Any]) -> None:
@@ -920,9 +1123,11 @@ class Session:
         runtime = reported.get(RUNTIME_KEY)
         restarted = False
         if _is_int(runtime):
-            # A large fall of the uptime is a device restart (rule 7).
+            # A fall of the uptime that was not dropped as stale is a device
+            # restart (rule 7).
             restarted = self._last_runtime is not None and runtime < self._last_runtime
             self._last_runtime = runtime
+            self._last_runtime_mono = now
         self._status = reported
         self._status_is_live = True
         self._last_frame_mono = now
@@ -939,6 +1144,7 @@ class Session:
         self._set_state(SessionState.LIVE)
         for waiter in tuple(self._waiters):
             waiter.offer(reported, now)
+        self._power_wake.set()
         self._schedule_notify()
         if restarted:
             self._counters.device_restarts += 1
@@ -948,18 +1154,21 @@ class Session:
         """Ask for a fresh status; True when a frame arrived in time.
 
         This registers again with a new token, which changes nothing on the
-        device but the token it reports to. A device that is on answers a
-        new registration within about 2 s; a repeated registration with the
-        same token gets no answer (measurement 8). In standby nothing
-        answers, so False is the normal result for a device that is off.
+        device but the token it reports to. In standby nothing answers, so
+        False is the normal result for a device that is off.
+
+        Not measured yet: whether a device that is on answers this. Measured
+        (measurement 8) is that a new registration from a new port is
+        answered within about 2 s, that one with the same token is not, and
+        that a new token from the same port takes the stream over. Until the
+        probe has measured the remaining case, False can also come from a
+        device that is on, and nothing should be built on it.
         """
         self._check_running()
         waiter = _FrameWaiter({})
         self._waiters.append(waiter)
         try:
-            if self._observations:
-                # Not a step on the ladder of rule 6: the label stays.
-                self._register_new_token(self._observations[-1].mode)
+            self._register_afresh()
             await waiter.wait(self._options.request_status_timeout)
             self._check_running()
             return waiter.matched
@@ -975,63 +1184,194 @@ class Session:
         NotConfirmedError. An unconfirmed write takes about 11 s at the
         default timings: 5 s, a refresh, 3 s, one resend and 3 s more.
 
-        Commands are serialised by the exchange lock. Merging several pending
-        writes into one message (report 6.4 item 6) is not done yet; several
-        keys in one call do travel in one message.
+        Commands are serialised by the exchange lock, and several keys in one
+        call travel in one message. Calls that overlap are not merged into
+        one message (report 6.4 item 6), but its rule holds: per key the
+        last value wins. A call gives up a key as soon as a newer call asks
+        another value for it and sends nothing for that key from then on;
+        with no key left it returns at once with ``superseded`` set.
+
+        A setting waits while another call of this session switches the
+        device on or off, and is then judged by what that call brought, so
+        that a scene can switch on and set a mode with two calls at once.
+
+        Switching off does not fail for want of a frame: a device that
+        already is in standby answers "success" and sends nothing, and that
+        answer is then taken for it (``WriteResult.assumed_off``).
         """
         self._check_running()
-        desired = self._validated(values)
+        write = self._issue(self._validated(values))
+        waiter = write.waiter
         opts = self._options
-        started = time.monotonic()
-        status = self._status
-        if status is not None and status.get(POWER_KEY) == 0 and desired.get(POWER_KEY) != 1:
-            self._counters.commands_blocked_off += 1
-            raise DeviceOffError("the device is off and would discard this", desired)
-        accepted = {key: accepted_readback(key, value) for key, value in desired.items()}
-        already_current = (
-            self._status_is_live and status is not None and all(status.get(key) in ok for key, ok in accepted.items())
-        )
-        # Registered before anything is sent, so that no frame can slip by.
-        waiter = _FrameWaiter(accepted)
-        self._waiters.append(waiter)
-        self._counters.commands_sent += 1
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+
+        def done(
+            *, already_current: bool = False, resent: bool = False, superseded: bool = False, assumed_off: bool = False
+        ) -> WriteResult:
+            if superseded:
+                self._counters.commands_superseded += 1
+            return WriteResult(
+                write.asked,
+                already_current,
+                resent,
+                write.attempts,
+                loop.time() - started,
+                superseded=superseded,
+                assumed_off=assumed_off,
+            )
+
         try:
-            attempts = await self._exchange(desired)
-            if already_current:
-                # Nothing changes on the device, so no frame has to follow.
-                return WriteResult(desired, True, False, attempts, time.monotonic() - started)
+            try:
+                await self._hold_for_power(write, started + opts.write_budget)
+                if write.desired:
+                    # At once: a refusal does not have to wait for the lock.
+                    self._judge(write)
+                await self._exchange(write, started + opts.write_budget)
+            except DeviceOffError:
+                self._counters.commands_blocked_off += 1
+                raise
+            if waiter.superseded:
+                return done(superseded=True)
+            if write.already_current or waiter.matched:
+                # Nothing changes on the device, so no frame has to follow;
+                # or a frame showed the values before the answer was in.
+                return done(already_current=write.already_current)
             frames_at_answer = waiter.frames
             # Frames in the settle window may predate the write (the Wi-Fi
             # module polls the main processor about once per second).
             waiter.mismatch_after = time.monotonic() + opts.confirm_settle
             await waiter.wait(opts.confirm_timeout)
+            if not waiter.settled:
+                self._check_running()
+                if write.switches_off and not waiter.mismatched:
+                    # Accepted, and then silence: what a device that already
+                    # was in standby does. One that is on may answer a new
+                    # registration, and from here on any frame is an answer:
+                    # it says off, or it says that the device is still on.
+                    waiter.mismatch_after = time.monotonic()
+                    self._register_afresh()
+                    await waiter.wait(opts.confirm_retry_wait)
+                    if not waiter.settled and not waiter.mismatched:
+                        self._check_running()
+                        self._assume_off()
+                        return done(assumed_off=True)
+                else:
+                    waiter.mismatch_after = None
+                    waiter.mismatched = False
+                    self._request_refresh(force=True)
+                    await waiter.wait(opts.confirm_retry_wait)
             resent = False
-            if not waiter.matched:
+            if not waiter.settled:
                 self._check_running()
                 waiter.mismatch_after = None
                 waiter.mismatched = False
-                self._request_refresh(force=True)
-                await waiter.wait(opts.confirm_retry_wait)
-            if not waiter.matched:
-                self._check_running()
                 resent = True
                 try:
-                    attempts += await self._exchange(desired)
+                    # What is left of it: nothing that a newer write took over.
+                    await self._exchange(write, loop.time() + opts.write_budget)
                 except WriteError as err:
                     _LOGGER.debug("%s: the resend failed: %s", self._host, err)
                 await waiter.wait(opts.confirm_retry_wait)
             self._check_running()
             if waiter.matched:
-                return WriteResult(desired, False, resent, attempts, time.monotonic() - started)
+                return done(resent=resent)
+            if waiter.superseded:
+                return done(resent=resent, superseded=True)
             self._counters.commands_unconfirmed += 1
             if waiter.frames == frames_at_answer:
                 # Not one frame since the device said "success": the stream
                 # itself is suspect. With frames arriving it is alive and the
                 # device simply did not apply the values.
                 self._escalate()
-            raise NotConfirmedError("accepted but not confirmed", desired)
+            raise NotConfirmedError("accepted but not confirmed", write.asked)
         finally:
+            self._writes.remove(write)
             self._waiters.remove(waiter)
+            self._power_wake.set()
+
+    def _issue(self, desired: dict[str, int]) -> _Write:
+        """Enter a call in the list of writes; older calls yield to it."""
+        for older in self._writes:
+            older.yield_to(desired)
+        accepted = {key: accepted_readback(key, value) for key, value in desired.items()}
+        # The waiter exists before anything is sent, so that no frame can slip by.
+        write = _Write(dict(desired), desired, _FrameWaiter(accepted))
+        self._writes.append(write)
+        self._waiters.append(write.waiter)
+        self._power_wake.set()
+        return write
+
+    def _power_in_transition(self, write: _Write) -> bool:
+        """Return True while another call is changing the power state."""
+        known = None if self._status is None else self._status.get(POWER_KEY)
+        return any(other is not write and other.desired.get(POWER_KEY, known) != known for other in self._writes)
+
+    async def _hold_for_power(self, write: _Write, deadline: float) -> None:
+        """Hold a setting back while this session switches the device on or off.
+
+        The device discards a setting it gets in standby and still answers
+        "success" (measurement 5), and it reports a switch-on only after 0.2
+        to 1.1 s. A setting that comes together with a switch-on is neither
+        refused on the status from before nor sent ahead of that report: it
+        waits for the outcome and is judged by it. The same goes for one
+        that comes together with a switch-off. The wait counts towards the
+        limit of the write.
+        """
+        if POWER_KEY in write.desired:
+            return
+        with contextlib.suppress(TimeoutError):
+            async with asyncio.timeout_at(deadline):
+                # A write that a newer one took over has nothing to wait for.
+                while write.desired and self._power_in_transition(write):
+                    self._power_wake.clear()
+                    await self._power_wake.wait()
+                    self._check_running()
+
+    def _judge(self, write: _Write) -> bool:
+        """Return True when the status already shows what this write asks for.
+
+        Raises DeviceOffError when the known status says off and the write
+        would be discarded: a setting written in standby is answered with
+        "success" and not applied (measurement 5). A value that already
+        holds comes first (report 6.4 item 3): asking for what is there is
+        not an error, also not on a device that is off. That covers
+        switching off a device that is off, which is never refused.
+        """
+        status = self._status
+        if status is None:
+            return False
+        desired = write.desired
+        accepted = write.waiter.accepted
+        shown = all(status.get(key) in accepted[key] for key in desired)
+        # Only a status of this session shows what the device has now. For a
+        # switch-off the restored one will do: "success" means off whatever
+        # the device was, and in standby no frame follows to wait for.
+        if shown and (self._status_is_live or write.switches_off):
+            return True
+        if status.get(POWER_KEY) == 0 and desired.get(POWER_KEY) != 1:
+            raise DeviceOffError("the device is off and would discard this", write.asked)
+        return False
+
+    def _assume_off(self) -> None:
+        """Take a switch-off that was accepted and followed by silence for done.
+
+        Measured (measurement 5, rows 6 and 7): "success" to a switch-off
+        means off either way. A device that was on reports it within 0.1 s;
+        one that already was in standby sends nothing, so no frame can ever
+        confirm it. That is where a session stands whose status says on
+        after the off-frame was lost, or after a power cut left the device
+        in standby: without this every switch-off would fail and the status
+        would go on saying on. If the device is on after all, its next frame
+        says so.
+        """
+        self._counters.switch_offs_assumed += 1
+        status = self._status
+        if status is not None and status.get(POWER_KEY) != 0:
+            _LOGGER.debug("%s: switched off without a status frame; taking the answer for it", self._host)
+            self._status = {**status, POWER_KEY: 0}
+            self._power_wake.set()
+            self._schedule_notify()
 
     @staticmethod
     def _validated(values: Mapping[str, int]) -> dict[str, int]:
@@ -1049,36 +1389,64 @@ class Session:
         ordered.update(values)
         return ordered
 
-    async def _exchange(self, values: Mapping[str, int]) -> int:
-        """Sync, then control with counter plus one; returns the attempts used.
+    async def _exchange(self, write: _Write, deadline: float) -> None:
+        """Sync, then control with counter plus one, for what is left of a write.
+
+        Returns when the device answered "success", when a frame shows the
+        values, or when a newer write left nothing to send. Raises
+        DeviceOffError before anything is sent, and RefusedError or
+        UnreachableError when the attempts are used up.
 
         Every attempt has its own sync and a newly encrypted payload, because
         each sync returns a fresh, unrelated counter (metingen.md,
-        measurement 2). The budget includes the wait for the lock.
+        measurement 2). The deadline includes the wait for the lock.
         """
         opts = self._options
+        waiter = write.waiter
+        loop = asyncio.get_running_loop()
         refused = False
+        judged = False
         try:
-            async with asyncio.timeout(opts.write_budget), self._exchange_lock:
-                for attempt in range(1, opts.write_attempts + 1):
+            async with asyncio.timeout_at(deadline), self._exchange_lock:
+                for _ in range(opts.write_attempts):
                     self._check_running()
+                    if waiter.superseded or loop.time() >= deadline:
+                        break
+                    if write.attempts and waiter.matched:
+                        # The answer was lost and the echo was not. A frame
+                        # that shows the values is the better proof anyway.
+                        break
+                    if not judged:
+                        # With the lock in hand: the status of the moment of
+                        # the call may be out of date after the wait for it.
+                        current = self._judge(write)
+                        judged = True
+                        if not write.attempts:
+                            write.already_current = current
+                            self._counters.commands_sent += 1
+                    write.attempts += 1
                     if not await self._ensure_socket():
                         continue
                     counter = await self._sync(opts.sync_timeout)
                     if counter is None:
                         continue
+                    values = dict(write.desired)
+                    if not values:
+                        break  # a newer write took every key over during the sync
                     answer = await self._control(crypto.next_counter(counter), values, opts.control_timeout)
                     if answer == "success":
-                        return attempt
+                        return
                     refused = refused or answer == "failed"
         except TimeoutError:
             pass
         self._check_running()
+        if waiter.settled:
+            return
         if refused:
             self._counters.commands_refused += 1
-            raise RefusedError("the device refused the command", values)
+            raise RefusedError("the device refused the command", write.asked)
         self._counters.commands_unanswered += 1
-        raise UnreachableError("no usable answer from the device", values)
+        raise UnreachableError("no usable answer from the device", write.asked)
 
     async def _sync(self, timeout: float) -> str | None:
         """Run the handshake; None unless the reply is exactly 8 hex characters.

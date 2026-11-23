@@ -124,12 +124,31 @@ class Transport:
         self._udp = udp
         self._protocol = protocol
 
+    async def resolve_again(self) -> bool:
+        """Look the host name up again; True when it now leads to another address.
+
+        The socket is kept: it is bound to no address of its own, so it
+        reaches the new address as it is. Whatever still arrives from the old
+        address is ignored from then on. Raises OSError when the name cannot
+        be resolved; the caller supplies the deadline.
+        """
+        peer = await self._resolve(asyncio.get_running_loop())
+        if peer == self._peer:
+            return False
+        self._peer = peer
+        return True
+
     async def _resolve(self, loop: asyncio.AbstractEventLoop) -> Addr:
         try:
             return str(ipaddress.IPv4Address(self.host)), self.port
         except ValueError:
             pass
-        infos = await loop.getaddrinfo(self.host, self.port, family=socket.AF_INET, type=socket.SOCK_DGRAM)
+        try:
+            infos = await loop.getaddrinfo(self.host, self.port, family=socket.AF_INET, type=socket.SOCK_DGRAM)
+        except UnicodeError as err:
+            # A name with an empty or an over-long label never reaches the
+            # resolver: encoding it fails, and that is not an OSError.
+            raise OSError(f"not a host name: {self.host!r}") from err
         if not infos:
             raise OSError(f"cannot resolve {self.host}")
         return str(infos[0][4][0]), self.port

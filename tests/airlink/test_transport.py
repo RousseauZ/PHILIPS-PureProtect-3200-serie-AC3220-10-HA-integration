@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import socket
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from airlink.coap import CONTENT, EMPTY, GET, POST, Message, MType, build_request
@@ -228,5 +228,61 @@ def test_close_ends_waiting_requests_and_reopen_takes_a_new_port(bench: Bench) -
         bench.fake.silent = False
         register(transport, token)
         await bench.until(lambda: len(seen) == 1)
+
+    bench.run(body)
+
+
+def test_host_name_is_resolved_at_open_and_again_on_request(bench: Bench) -> None:
+    async def body() -> None:
+        loop = asyncio.get_running_loop()
+        address = {"purifier.test": "127.0.0.1"}
+
+        async def getaddrinfo(host: str, port: int, **_: Any) -> list[Any]:
+            if host not in address:
+                raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+            return [(socket.AF_INET, socket.SOCK_DGRAM, 17, "", (address[host], port))]
+
+        loop.getaddrinfo = getaddrinfo  # type: ignore[method-assign]
+        transport = Transport("purifier.test", bench.fake.port)
+        try:
+            await transport.open()
+            assert await transport.ping(1.0) is True
+            assert await transport.resolve_again() is False, "the same address: nothing changes"
+
+            # The name leads elsewhere now. The socket stays and reaches the
+            # new address; the old one has become a stranger.
+            port = transport.local_port
+            address["purifier.test"] = "127.0.0.2"
+            assert await transport.resolve_again() is True
+            assert transport.local_port == port
+            assert await transport.ping(0.1) is False, "nothing listens at the new address"
+            assert bench.fake.pings_received == 1
+            bench.fake.send_raw(("127.0.0.1", port), Message(MType.CON, EMPTY, 4711).encode())
+            await bench.until(lambda: transport.counters.foreign == 1)
+
+            # A name that is gone leaves the transport where it was.
+            del address["purifier.test"]
+            with pytest.raises(OSError, match="not known"):
+                await transport.resolve_again()
+        finally:
+            transport.close()
+
+        # An address is never looked up.
+        literal = bench.transport()
+        await literal.open()
+        assert await literal.resolve_again() is False
+
+    bench.run(body)
+
+
+@pytest.mark.parametrize("host", ["purifier..lan", "p" * 64 + ".lan"])
+def test_name_that_cannot_be_encoded_fails_like_one_that_does_not_resolve(bench: Bench, host: str) -> None:
+    async def body() -> None:
+        # The resolver refuses such a name with a UnicodeError; open()
+        # promises an OSError for every way of not getting a socket.
+        transport = Transport(host, bench.fake.port)
+        with pytest.raises(OSError, match="not a host name"):
+            await transport.open()
+        assert not transport.is_open
 
     bench.run(body)

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import time
 from typing import TYPE_CHECKING
 
 import pytest
-from airlink import Identity, RestoredState, SessionState, SessionStoppedError
-from airlink.coap import GET, MType, build_request
+from airlink import Identity, RestoredState, SessionState, SessionStoppedError, crypto
+from airlink.coap import CONTENT, GET, OPT_BLOCK2, OPT_OBSERVE, Message, MType, build_request
 
 if TYPE_CHECKING:
     from conftest import Bench
@@ -76,9 +78,18 @@ def test_refresh_takes_the_stream_back_from_another_client(bench: Bench) -> None
         await intruder.open()
         token = intruder.new_token()
         intruder.add_stream(token, lambda msg: None)
+        frames = session.diagnostics().frames_received
         intruder.send(build_request(MType.NON, GET, intruder.next_mid(), token, "/sys/dev/status", observe=0))
-        await bench.until(lambda: ours not in fake.observers)
-        await bench.until(lambda: ours in fake.observers, "the refresh did not take the stream back")
+        # The other client holds the stream for one refresh interval at most,
+        # too short to wait for. What stays visible: the device saw its
+        # registration and after that ours again...
+        await bench.until(lambda: any(seen == token for _, seen in fake.registrations))
+        theirs = next(index for index, (_, seen) in enumerate(fake.registrations) if seen == token)
+        await bench.until(lambda: ours in fake.registrations[theirs + 1 :], "the refresh did not take the stream back")
+        # ...and it answered ours with a frame, which it does for a new
+        # observer only: we had been put out and came back in.
+        await bench.until(lambda: session.diagnostics().frames_received == frames + 1)
+        assert list(fake.observers) == [ours]
         fake.change("D03221", 66)
         await bench.until(lambda: session.status is not None and session.status["D03221"] == 66)
 
@@ -91,6 +102,7 @@ def test_corrupt_frame_is_dropped_and_followed_by_a_refresh(bench: Bench) -> Non
         session = await bench.live(options=bench.quiet)
         await bench.settled()
         registrations = len(fake.registrations)
+        token = fake.registrations[-1][1]
         before = dict(session.status or {})
         notified: list[int] = []
         session.add_listener(lambda: notified.append(1))
@@ -100,12 +112,46 @@ def test_corrupt_frame_is_dropped_and_followed_by_a_refresh(bench: Bench) -> Non
         await bench.until(lambda: session.diagnostics().frames_dropped == {"bad_ciphertext": 1})
         assert session.status == before and not notified, "a damaged frame must not touch the status"
         assert session.state is LIVE
-        # The change is lost, so the registration is sent again.
+        # The change is lost, so the registration is sent again, with a new
+        # token: the same one would not be answered (measurement 8).
         await bench.until(lambda: len(fake.registrations) == registrations + 1)
+        assert fake.registrations[-1][1] != token
+        assert session.status == before, "this device does not answer that one either"
 
+        # The new token holds the stream from here on.
         fake.change("D03221", 56)
         await bench.until(lambda: session.status is not None and session.status["D03221"] == 56)
         assert session.diagnostics().frames_dropped == {"bad_ciphertext": 1}
+
+    # Not measured yet: whether a new token from the same port is answered.
+    # This is the device on which it is not; the next test has the other one.
+    bench.run(body, answer_new_token_on_same_port=False)
+
+
+def test_change_lost_in_a_corrupt_frame_is_fetched_with_a_new_token(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.quiet)
+        await bench.settled()
+        client, token = fake.registrations[-1]
+        fake.corrupt_next_frames = 1
+        fake.change("D03221", 55)
+        # Nothing else changes on the device. The session knows that it
+        # missed something, and a new registration is answered while the
+        # device is on.
+        await bench.until(
+            lambda: session.status is not None and session.status["D03221"] == 55,
+            "the session knows it missed a change and never got the status",
+            2.0,
+        )
+        new = fake.registrations[-1][1]
+        assert new != token and list(fake.observers) == [(client, new)]
+        diag = session.diagnostics()
+        assert diag.frames_dropped == {"bad_ciphertext": 1}
+        # Not a step on the recovery ladder: no command went unconfirmed.
+        assert diag.escalations == 0 and diag.refresh_mode == "same_token"
+        # The token that was given up is deregistered once the new one delivers.
+        await bench.until(lambda: (client, token) in fake.deregistrations)
 
     bench.run(body)
 
@@ -146,6 +192,85 @@ def test_reordered_older_frame_is_dropped_as_stale(bench: Bench) -> None:
     bench.run(body)
 
 
+def test_restart_soon_after_boot_is_not_dropped_as_a_stale_frame(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        fake._boot = time.monotonic() - 0.5  # the device booted half a second ago
+        session = await bench.live(options=bench.options(bench.quiet, runtime_stale_window_ms=400))
+        assert session.status is not None
+        last = session.status["Runtime"]
+        await asyncio.sleep(0.6)  # longer than the window: no reordering spans this
+
+        fake.reboot()  # a power cut; the observer is gone
+        # Back with an uptime a little below the one of the last frame: the
+        # first frame after a boot carries about the same uptime every time.
+        fake._boot = time.monotonic() - (last - 380) / 1000
+        fake.state["D03221"] = 77
+        assert await session.request_status() is True
+        diag = session.diagnostics()
+        assert session.status["D03221"] == 77, f"the status after the restart was dropped: {diag.frames_dropped}"
+        assert 0 < last - session.status["Runtime"] < 400
+        assert diag.device_restarts == 1 and diag.frames_dropped == {}
+
+    bench.run(body)
+
+
+def test_frame_with_a_lower_message_id_is_accepted(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.quiet)
+        # No filtering on message id: it wraps at 65535 and starts over with the device.
+        fake._mid = 0xFFFE
+        fake.change("D03221", 43)  # message id 65535
+        fake.change("D03221", 44)  # message id 0
+        await bench.until(lambda: session.status is not None and session.status["D03221"] == 44)
+        fake._mid = 3
+        fake.change("D03221", 45)
+        await bench.until(lambda: session.status is not None and session.status["D03221"] == 45)
+        assert session.diagnostics().frames_dropped == {}
+
+    bench.run(body)
+
+
+def test_runtime_fall_is_followed_by_a_refresh(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.quiet)
+        await bench.settled()
+        await asyncio.sleep(0.1)
+        registrations = len(fake.registrations)
+        fake._boot = time.monotonic()  # the uptime starts over
+        fake.change("D03221", 50)
+        await bench.until(lambda: session.diagnostics().device_restarts == 1)
+        await bench.until(lambda: len(fake.registrations) == registrations + 1, "no refresh after the fall", 1.5)
+
+    bench.run(body)
+
+
+def test_block_wise_frame_is_dropped(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.quiet)
+        await bench.settled()
+        addr, token = fake.registrations[-1]
+        assert session.status is not None
+        before = dict(session.status)
+        reported = {**fake.state, "Runtime": before["Runtime"] + 1000, "D03221": 99}
+        envelope = crypto.encrypt("2000000A", json.dumps({"state": {"reported": reported}}))
+        # Block2: block 0, more to follow, 1024 bytes. Nothing here puts
+        # blocks together, so one of them is not a status.
+        block = Message(
+            MType.NON, CONTENT, 7, token, [(OPT_OBSERVE, b"\x63"), (OPT_BLOCK2, b"\x0e")], envelope.encode()
+        )
+        fake.send_raw(addr, block.encode())
+        await bench.until(lambda: session.diagnostics().frames_dropped == {"blockwise": 1}, "not dropped", 1.5)
+        assert session.status == before
+
+    # A device that leaves the registration that follows unanswered, so that
+    # the status stays what it was.
+    bench.run(body, answer_new_token_on_same_port=False)
+
+
 def test_frame_for_another_device_is_dropped_and_flagged(bench: Bench, caplog: pytest.LogCaptureFixture) -> None:
     async def body() -> None:
         fake = bench.fake
@@ -179,6 +304,70 @@ def test_identity_check_on_first_contact_flags_another_device(bench: Bench) -> N
         await bench.until(lambda: session.identity_mismatch, "the info answer was not checked")
         assert session.identity is not None and session.identity.device_id == fake.state["DeviceId"]
         assert session.diagnostics().identity_mismatches == 1 and session.available
+
+    bench.run(body)
+
+
+def test_info_answer_without_ids_flags_another_kind_of_device(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        infos = 0
+
+        def television(msg: Message, sender: tuple[str, int]) -> None:
+            nonlocal infos
+            infos += 1
+            fake._respond(msg, sender, b'{"name":"[LG] webOS TV","swversion":"1.0"}')
+
+        # Measured: a television answers the info request on this port,
+        # without any id. It has the address now; it answers the ping and
+        # sends no status frame that could give it away.
+        handle_info = fake._handle_info
+        fake._handle_info = television  # type: ignore[method-assign]
+        fake.power_off(notify=False)
+        session = bench.session(options=bench.quiet, expected_device_id=fake.state["DeviceId"])
+        flagged: list[bool] = []
+        session.add_listener(lambda: flagged.append(session.identity_mismatch))
+        await session.start()
+        await bench.until(
+            lambda: session.identity_mismatch, "an answer that cannot come from the device was not flagged"
+        )
+        await asyncio.sleep(0.6)  # time for a second attempt, which must not come
+        assert infos == 1, "that was an answer, not a missing one"
+        assert session.identity is None and session.available and session.state is REACHABLE
+        # Told when the device answered at all, and again when the flag went up.
+        assert session.diagnostics().identity_mismatches == 1 and flagged == [False, True]
+
+        # The purifier is back at its address: its next frame takes the flag down.
+        fake._handle_info = handle_info  # type: ignore[method-assign]
+        fake.power_on()
+        await bench.until(lambda: not session.identity_mismatch)
+        assert session.state is LIVE
+
+    bench.run(body)
+
+
+def test_info_answer_without_ids_is_not_an_identity(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        answers = [b'{"name":"[LG] webOS TV","swversion":"1.0"}', b"\x00\x00 not json", b"[1, 2]"]
+
+        def other(msg: Message, sender: tuple[str, int]) -> None:
+            fake._respond(msg, sender, answers[0])
+
+        fake._handle_info = other  # type: ignore[method-assign]
+        # As a config flow would ask: nothing is expected, so nothing is flagged.
+        session = bench.session()
+        assert await session.identify() is None and session.identity is None
+        assert not session.identity_mismatch
+
+        # An answer that cannot be read is no verdict on who sent it: the
+        # purifier itself sends a damaged answer now and then.
+        expecting = bench.session(expected_device_id=fake.state["DeviceId"])
+        for unreadable in answers[1:]:
+            answers[0] = unreadable
+            requests = len(fake.requests)
+            assert await expecting.identify() is None and not expecting.identity_mismatch
+            assert len(fake.requests) == requests + bench.fast.info_attempts, "asked again each time"
 
     bench.run(body)
 
@@ -275,6 +464,24 @@ def test_identify_reads_the_info_resource(bench: Bench) -> None:
         await session.stop()
         with pytest.raises(SessionStoppedError):
             await session.identify()
+
+    bench.run(body)
+
+
+def test_start_registers_on_a_socket_that_identify_opened(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        # The usual order of a set-up: ask who is there, then start.
+        session = bench.session(options=bench.quiet, expected_device_id=fake.state["DeviceId"])
+        assert await session.identify() is not None and not session.identity_mismatch
+        assert not fake.registrations, "identifying registers nothing"
+        await session.start()
+        await bench.until(lambda: session.state is LIVE, "start() after identify() did not register for status")
+        assert len(fake.observers) == 1 and session.diagnostics().socket_recreations == 0
+        # With the stream there, a command is confirmed and a status can be asked for.
+        result = await session.write({"D03103": 1})
+        assert not result.resent and session.diagnostics().escalations == 0
+        assert await session.request_status() is True
 
     bench.run(body)
 
@@ -396,3 +603,27 @@ def test_request_status_registers_anew_and_reports_whether_a_frame_came(bench: B
         assert session.status["D03221"] == 123
 
     bench.run(body)
+
+
+def test_request_status_gets_nothing_from_a_device_that_answers_a_new_port_only(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.quiet)
+        await bench.settled()
+        client, token = fake.registrations[-1]
+        # Not measured on the AC3220/10: whether a registration with a new
+        # token is answered when it comes from the port that holds the
+        # observation. If it is not, this is what request_status() is worth.
+        fake.state["D03221"] = 123  # changed while nobody was told
+        assert await session.request_status() is False, "the device is on, and it cannot be told from standby"
+        assert session.status is not None and session.status["D03221"] != 123
+        # Nothing is lost by having asked: the new token took the stream
+        # over (measured), and the next change arrives on it.
+        new = fake.registrations[-1][1]
+        assert new != token and list(fake.observers) == [(client, new)]
+        fake.change("D03221", 124)
+        await bench.until(lambda: session.status is not None and session.status["D03221"] == 124)
+        await bench.until(lambda: (client, token) in fake.deregistrations)
+        assert session.state is LIVE and session.diagnostics().escalations == 0
+
+    bench.run(body, answer_new_token_on_same_port=False)

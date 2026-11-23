@@ -7,11 +7,13 @@ loop holds no task once the sessions are stopped.
 from __future__ import annotations
 
 import asyncio
+import gc
 import time
+import warnings
 from typing import TYPE_CHECKING
 
 import pytest
-from airlink import SessionState, SessionStoppedError
+from airlink import NotConfirmedError, SessionState, SessionStoppedError
 from airlink.transport import Transport
 
 if TYPE_CHECKING:
@@ -76,6 +78,27 @@ def test_stop_during_start(bench: Bench) -> None:
         await assert_quiet(bench)
         with pytest.raises(SessionStoppedError):
             await session.start()
+
+    bench.run(body)
+
+
+def test_stop_during_a_start_whose_socket_cannot_be_opened(bench: Bench, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def body() -> None:
+        async def failing_open(transport: Transport) -> None:
+            await asyncio.sleep(0.05)
+            raise OSError(24, "Too many open files")
+
+        monkeypatch.setattr(Transport, "open", failing_open)
+        session = bench.session()
+        starting = asyncio.ensure_future(session.start())
+        await asyncio.sleep(0.01)  # start() is inside the open and holds the socket lock
+        await session.stop()
+        # start() goes on after the failed open. It must not begin to
+        # supervise a session that stop() has already left.
+        left = [task for task in other_tasks() if task is not starting]
+        assert not left, f"stop() returned with tasks of the session alive: {left}"
+        await starting
+        assert not other_tasks() and session.state is SessionState.OFFLINE
 
     bench.run(body)
 
@@ -155,6 +178,33 @@ def test_stop_ends_a_write_that_waits_for_the_lock(bench: Bench) -> None:
         assert fake.syncs_received == 1 and not other_tasks()
 
     bench.run(body)
+
+
+def test_stop_before_a_one_shot_task_ran_leaves_no_unawaited_coroutine(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.options(bench.quiet, confirm_timeout=0.1, confirm_retry_wait=0.1))
+        await bench.settled()
+        # The device went to standby and the frame that said so was lost: two
+        # writes in a row are acknowledged and never confirmed. The second
+        # one climbs to the resync, which runs as a task of its own...
+        fake.power_off(notify=False)
+        for _ in range(2):
+            with pytest.raises(NotConfirmedError):
+                await session.write({"D03103": 1})
+        assert session.diagnostics().escalations == 2
+        # ...and the caller stops the session before that task took a step.
+        await session.stop()
+        assert not other_tasks()
+
+    # A coroutine that was made and never awaited is reported when it is
+    # collected: a RuntimeWarning in the log, an error where warnings are errors.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        bench.run(body)
+        gc.collect()
+    leaked = [str(item.message) for item in caught if "never awaited" in str(item.message)]
+    assert not leaked, leaked
 
 
 def test_cancelled_write_leaves_the_session_usable(bench: Bench) -> None:
