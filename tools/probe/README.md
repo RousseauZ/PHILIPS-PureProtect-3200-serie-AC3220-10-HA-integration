@@ -117,6 +117,14 @@ python -m pureprotect_probe info --host <ip> --aantal 20   # de info-aanvraag he
 python -m pureprotect_probe set --host <ip> D0310C=3       # één schrijfopdracht, alleen gehele getallen
 ```
 
+## Terugkijken op een meting
+
+```bash
+python -m pureprotect_probe.inspect_run metingen/<map-van-de-meting>
+```
+
+Dit leest alleen het logbestand en stuurt niets naar het apparaat. Het toont of het apparaat aan stond, welke waarden hoe vaak veranderden, wat er op elke abonnementsaanvraag volgde en hoe de controles antwoordden.
+
 ## Resultaten
 
 | Bestand | Inhoud |

@@ -158,6 +158,28 @@ Vijf rondes; per ronde gingen vier info-aanvragen tegelijk uit.
 
 Een ander apparaat in het netwerk, een LG-televisie, antwoordde ook op de broadcast en de multicast, met een antwoord zonder `modelid`, `type` of `device_id`.
 
+### Meting 12: `liveness`, acht uur in de nacht
+
+Bedoeld als meting van stilte in stand-by, maar het apparaat meldde de hele nacht door. Het stond dus aan, of in stand-by met "sensoren in stand-by" aan; welke van de twee, blijkt uit de terugblik (zie onder).
+
+| Onderwerp | Uitkomst |
+|---|---|
+| Sync | 960 van 960 beantwoord, mediaan 125 ms, traagste 483 ms |
+| Info-aanvraag | 960 van 960 beantwoord, mediaan 660 ms, traagste 1294 ms |
+| CoAP-ping | 960 van 960 beantwoord, mediaan 126 ms, traagste 449 ms |
+| Statusberichten | 8859 in acht uur, gemiddeld één per 3,3 s; langste periode zonder wijziging 85 s |
+| Berichten die alleen de bekende status herhaalden | 10 van de 8859 |
+| Vernieuwen met hetzelfde kenmerk, elke minuut | Ongeveer 480 keer verstuurd. Het abonnement bleef acht uur leveren. Hooguit 10 van die 480 kunnen met een herhaling van de status zijn beantwoord |
+| Sync-teller | Bij elke sync een andere, niet oplopende waarde |
+
+Terugkijken op een afgeronde meting kan zonder opnieuw te meten:
+
+```bash
+python -m pureprotect_probe.inspect_run metingen/20261122-214359-liveness
+```
+
+Dat toont of het apparaat aan stond, welke waarden hoe vaak veranderden en wat er op elke vernieuwing volgde.
+
 ### Eerste statusbericht na een nieuw abonnement, over alle metingen
 
 | Toestand | Tijd tot het eerste bericht |
@@ -185,9 +207,13 @@ Zes keer binnen twee seconden is geen toeval: met het apparaat aan beantwoordt h
 | Een nieuw kenmerk vervangt het oude direct | Overstappen op een nieuw kenmerk kan zonder overgangsperiode |
 | Afmelden en een reset worden genegeerd | Bij het stoppen valt er niets af te melden. Het apparaat blijft naar de laatste abonnee sturen tot een nieuwe zich meldt; dat is onschadelijk. |
 | Clients vanaf hetzelfde adres delen één teller; de laatste sync telt | Bevestigt: sync direct vóór elk commando, onder één slot. Een sync als bereikbaarheidscontrole kan de teller van een andere client ongeldig maken; de ping heeft dat nadeel niet. |
-| Met het apparaat aan beantwoordt het een nieuw abonnement binnen ongeveer 2 s; een vernieuwing met hetzelfde kenmerk vermoedelijk niet (één waarneming, wordt opnieuw gemeten) | Bij het opstarten van Home Assistant komt de status vanzelf binnen als het apparaat aan staat. Vernieuwen met hetzelfde kenmerk is alleen een vangnet en levert zelf geen status op. |
+| Met het apparaat aan beantwoordt het een nieuw abonnement binnen ongeveer 2 s; een vernieuwing met hetzelfde kenmerk niet (meting 12: hooguit 10 herhalingen op ongeveer 480 vernieuwingen) | Bij het opstarten van Home Assistant komt de status vanzelf binnen als het apparaat aan staat. Vernieuwen met hetzelfde kenmerk is alleen een vangnet en levert zelf geen status op. |
 | De info-aanvraag wordt vaak niet beantwoord, zeker bij meerdere tegelijk (7 van 15) | Herkenning vraagt drie tot vijf pogingen, één tegelijk, met een seconde ertussen |
 | Het apparaat is vindbaar via broadcast, niet via multicast; een ander apparaat in het netwerk antwoordt ook op poort 5683 | Automatisch zoeken via broadcast met herhalingen. Elk antwoord streng controleren op `device_id`, `product_id` en een bekend model. |
+| Drie soorten controles bleven acht uur lang elke keer antwoorden (2880 van 2880), met het apparaat actief | De regel voor "onbereikbaar" (drie missers, drie minuten stilte en een tweede soort controle die ook faalt) heeft ruime marge. Voor uren stilte in stand-by is dit nog niet gemeten |
+| De info-aanvraag antwoordt betrouwbaar als ze alleen wordt gesteld, maar traag (tot 1,3 s) | De identiteitscontrole wacht 2 s en vraagt nooit twee keer tegelijk |
+| Een actief apparaat stuurt gemiddeld elke 3,3 s een statusbericht | Home Assistant mag niet bij elk bericht naar schijf schrijven, en een tijdstip-sensor mag niet elk bericht volgen |
+
 
 ## Functiedekking
 
