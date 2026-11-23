@@ -230,6 +230,17 @@ Alle gewijzigde instellingen zijn daarna teruggezet en bevestigd.
 
 0 van 10 beantwoord. De televisie antwoordt wel op een info-aanvraag via broadcast (meting 11), maar niet op een ping.
 
+### Meting 17: de integratie in Home Assistant 2026.11.2, apparaat aan
+
+Eerste installatie op 23 november 2026 om 20:36.
+
+| Onderwerp | Uitkomst |
+|---|---|
+| Toevoegen met het IP-adres | Gelukt; model AC3220/10 en firmware 0.2.3 staan op de apparaatpagina |
+| Entiteiten | Alle verwacht aanwezig, met waarden: allergenenindex, luchtvochtigheid, PM2.5, temperatuur, ventilatorsnelheid, filtertellers, licht, helderheid, scène, timer en de schakelaars |
+| Bediend vanuit Home Assistant | Licht naar sfeerlicht, Auto Plus aan, Allergie-slaap aan, ventilator uit en weer aan: elke keer gevolgd door de nieuwe toestand |
+| Ontbreekt | Het pictogram van de integratie ("logo not available") |
+
 ### Eerste statusbericht na een nieuw abonnement, over alle metingen
 
 | Toestand | Tijd tot het eerste bericht |
@@ -279,8 +290,8 @@ Doel: elke functie die het apparaat lokaal prijsgeeft, is beschikbaar in de inte
 | Functie | Sleutel | Lezen | Bedienen | In de integratie |
 |---|---|---|---|---|
 | Aan en uit | `D03102` | Gemeten | Gemeten | Ventilator |
-| Standen auto, slaap, medium, turbo | `D0310C` | Gemeten | Gemeten | Ventilator: auto en slaap als stand, medium en turbo als 60% en 100% |
-| Handmatige snelheden 1 tot 5 | `D0310C` | Gemeten | Gemeten | Ventilator |
+| Standen auto, slaap, medium, turbo | `D0310C` | Gemeten | Gemeten | Keuzelijst "Stand", en de ventilator: auto en slaap als stand, medium en turbo als 60% en 100% |
+| Handmatige snelheden 1 tot 5 | `D0310C` | Gemeten | Gemeten | Keuzelijst "Stand" en de ventilator |
 | Werkelijk toerental | `D0310D` | Gemeten | Alleen-lezen | Sensor "Ventilatorsnelheid" |
 | Kinderslot | `D03103` | Gemeten | Gemeten (alleen met het apparaat aan) | Schakelaar |
 | Allergie-slaap | `D03115` | Gemeten | Gemeten | Schakelaar |
@@ -293,7 +304,7 @@ Doel: elke functie die het apparaat lokaal prijsgeeft, is beschikbaar in de inte
 | Lichtscène | `D03137` | Gemeten | Gemeten | Keuzelijst "Scène sfeerlicht" |
 | Timer | `D03110`, `D03211` | Gemeten | Gemeten | Keuzelijst en sensor "Timer loopt af" |
 | Fijnstof, allergenenindex, temperatuur, vochtigheid | `D03221`, `D03120`, `D03224`, `D03125` | Gemeten | Alleen-lezen | Sensoren |
-| Filter: resterende levensduur | `D0540E`, `D05408` | Gemeten | Gemeten (schrijfbaar) | Sensor en waarschuwing. Geen knop: in de app niet gezien. Omdat de teller schrijfbaar is, kan er een knop bij als je die wilt |
+| Filter: resterende levensduur | `D0540E`, `D05408` | Gemeten | Gemeten (schrijfbaar) | Sensor, waarschuwing en knop "Nieuw filter geplaatst" (in de app niet gezien) |
 | Filter: reinigen | `D0520D`, `D05207` | Gemeten | Gemeten (schrijfbaar) | Sensor, waarschuwing en knop "Filter gereinigd", zoals in de app |
 | Weergegeven index op het display | `D0312A` | In de status | Genegeerd | Geen |
 | Drempel voor meldingen | `D0312C` | In de status | Gemeten | Geen: meldingen lopen via de cloud |

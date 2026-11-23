@@ -91,3 +91,17 @@ MODE_TO_SPEED: Final = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 19: 3, 18: 5}
 # What the device reports as running speed (Key.FAN_LEVEL), as a step from 1
 # to 5. Measured: speed 5 and turbo both report 18.
 LEVEL_TO_SPEED: Final = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 18: 5}
+# Every mode of the device, as the select "Mode" offers it: the buttons of the
+# device and the app, and the five fixed speeds (all measured writable,
+# docs/metingen.md measurement 14).
+DEVICE_MODES: Final = {
+    "auto": 0,
+    "sleep": 17,
+    "medium": 19,
+    "turbo": 18,
+    "speed_1": 1,
+    "speed_2": 2,
+    "speed_3": 3,
+    "speed_4": 4,
+    "speed_5": 5,
+}

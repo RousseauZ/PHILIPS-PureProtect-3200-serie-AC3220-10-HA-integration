@@ -50,6 +50,9 @@
     "button": {
       "filter_cleaned": {
         "default": "mdi:air-filter"
+      },
+      "filter_replaced": {
+        "default": "mdi:air-filter"
       }
     },
     "switch": {
@@ -82,6 +85,15 @@
       }
     },
     "select": {
+      "mode": {
+        "default": "mdi:fan",
+        "state": {
+          "off": "mdi:fan-off",
+          "auto": "mdi:fan-auto",
+          "sleep": "mdi:power-sleep",
+          "turbo": "mdi:fan-plus"
+        }
+      },
       "light_mode": {
         "default": "mdi:lightbulb-outline"
       },

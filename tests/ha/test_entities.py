@@ -41,6 +41,8 @@ UNIQUE_IDS = {
     "switch.woonkamer_sensors_in_standby": "standby_sensors",
     "switch.woonkamer_display": "display",
     "button.woonkamer_filter_cleaned": "filter_cleaned",
+    "button.woonkamer_new_filter_fitted": "filter_replaced",
+    "select.woonkamer_mode": "mode",
 }
 
 # entity: (device class, state class, unit, section of the device page)
@@ -71,6 +73,8 @@ DESCRIBED = {
     "select.woonkamer_ambient_light_scene": (None, None, None, "config"),
     "select.woonkamer_timer": (None, None, None, "config"),
     "button.woonkamer_filter_cleaned": (None, None, None, "config"),
+    "button.woonkamer_new_filter_fitted": (None, None, None, "config"),
+    "select.woonkamer_mode": (None, None, None, None),
 }
 
 # Diagnostic values that few people need: they exist, switched off.

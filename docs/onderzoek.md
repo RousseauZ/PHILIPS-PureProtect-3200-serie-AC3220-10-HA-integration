@@ -531,9 +531,9 @@ Het programma voert deze reeks uit:
 | 0 | Snelle controle uit 7.1 | Firmware, sleutelset en werkende schrijfopdrachten van jouw apparaat | Gedaan met het meetprogramma |
 | 1 | Meetprogramma bouwen en de reeks uit 7.2 draaien | Ontwerpkeuzes vastgelegd; de kern van de protocollaag bestaat | Programma klaar. Elf metingen gedaan, zie [metingen.md](metingen.md); daar staat ook wat nog open is |
 | 2 | Protocol- en sessiepakket met nagebootst apparaat en tests | Betrouwbare verbinding, los van Home Assistant te testen | Klaar en door drie controleurs nagelopen; 157 tests. Draait tegen het echte apparaat: status binnen na 1 s, schrijfopdrachten bevestigd na 0,3 s (meting 15) |
-| 3 | Minimale integratie: instellen met IP-adres, coordinator, ventilator en sensoren | Werkend in je eigen Home Assistant | Geschreven, samen met stap 4. Door vier controleurs nagelopen, de bewezen fouten opgelost en dat onafhankelijk nagecontroleerd; 119 tests in Home Assistant 2026.11. Nog niet in je eigen Home Assistant gedraaid |
+| 3 | Minimale integratie: instellen met IP-adres, coordinator, ventilator en sensoren | Werkend in je eigen Home Assistant | Geschreven, samen met stap 4. Door vier controleurs nagelopen, de bewezen fouten opgelost en dat onafhankelijk nagecontroleerd; 119 tests in Home Assistant 2026.11. Draait sinds 23 november 2026 in je eigen Home Assistant 2026.11.2 |
 | 4 | Overige entiteiten, diagnostiek, DHCP-herkenning, herconfiguratie, vertalingen | Volledige functionaliteit | Entiteiten, de knop "Filter gereinigd", diagnostiek, herconfiguratie en vertalingen zijn er. Nog niet: DHCP-herkenning, zoeken in het netwerk, een pictogram |
-| 5 | Duurtest van één tot twee weken op je eigen apparaat, met de diagnostiektellers | Aantoonbaar stabiel | Nog niet begonnen |
+| 5 | Duurtest van één tot twee weken op je eigen apparaat, met de diagnostiektellers | Aantoonbaar stabiel | Begonnen op 23 november 2026 |
 | 6 | Eerste release met installatielink; kleine verbeteringen aanbieden bij de bestaande projecten | Publiek beschikbaar | Nog niet begonnen |
 
 ---
@@ -567,7 +567,8 @@ Het programma voert deze reeks uit:
 | Aan of uit na een herstart | Een apparaat dat aan staat beantwoordt een nieuw abonnement binnen twee seconden en meldt daarna elke paar seconden iets; in stand-by zwijgt het. Antwoordt het apparaat wel op controles maar komt er tien seconden na een nieuw abonnement geen statusbericht, dan gaat de integratie ervan uit dat het uit staat. Het eerste statusbericht daarna geeft de werkelijke toestand. Zonder deze regel zou Home Assistant na een herstart "aan" blijven tonen voor een apparaat dat uit staat. | 23 november 2026, door mij gekozen |
 | Meetwaarden terwijl het apparaat uit staat | Fijnstof, allergenenindex, temperatuur en luchtvochtigheid zijn "onbekend" zolang het apparaat uit staat en "sensoren in stand-by" uit is, omdat het dan niet meet. Dit wijkt af van "laatste waarden blijven staan" in 6.3: een temperatuur van gisteren als actueel tonen is misleidend. | 23 november 2026, door mij gekozen; jij kunt het nog omdraaien |
 | Aanzetten met een stand | De ventilator stuurt aanzetten en de stand in één opdracht; het apparaat past beide toe (meting 14) | 23 november 2026 |
-| Filter | Een knop "Filter gereinigd" die de reinigingsteller terugzet, zoals de app. Geen knop voor een nieuw filter, omdat de app die niet liet zien | 23 november 2026 |
+| Filter | Een knop "Filter gereinigd" die de reinigingsteller terugzet, zoals de app, en een knop "Nieuw filter geplaatst" die de levensduur op vol zet | 23 november 2026, de tweede knop op jouw verzoek om alle functies |
+| Stand | Naast de ventilator een keuzelijst "Stand" met alle standen zoals het apparaat ze noemt (uit, auto, slaap, medium, turbo, snelheid 1 tot 5), zichtbaar op de apparaatpagina. De ventilator houdt het model van Home Assistant (variant B) | 23 november 2026, na je vraag waarom de snelheid niet te vinden was |
 | Weergegeven index (`D0312A`) | Geen entiteit: het apparaat negeert de schrijfopdracht | 23 november 2026 |
 
 **Beslissingen voor jou:**
