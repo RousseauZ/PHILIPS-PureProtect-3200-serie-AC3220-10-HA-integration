@@ -341,7 +341,7 @@ Entiteiten worden aangemaakt uit de bewaarde sleutelset van het apparaat (zie 6.
 |---|---|
 | Aan/uit | `D03102` |
 | Stand en snelheid | `D0310C`: 0 auto, 17 slaap, 19 medium, 18 turbo, 1 tot 5 handmatig |
-| Percentage teruglezen | Uit het werkelijke toerental `D0310D`, in elke stand |
+| Percentage teruglezen | Bij een vaste snelheid uit de stand. In auto en slaap geen percentage: Home Assistant behandelt percentage en voorkeuzestand als elkaar uitsluitend, en een scène die in auto is opgeslagen zou het apparaat anders uit auto halen (aangetoond bij de controle van 23 november 2026). Het werkelijke toerental staat in een eigen sensor. |
 
 Twee varianten voor de indeling, te kiezen na de meting:
 
@@ -564,6 +564,9 @@ Het programma voert deze reeks uit:
 | Indeling van de ventilator | Voorlopig variant B uit 6.6: de standen auto en slaap, en vijf snelheden; medium en turbo zijn 60% en 100%. De meting bevestigde dat snelheid 3 en medium, en snelheid 5 en turbo, hetzelfde toerental geven. De tabel is gegevensgestuurd, dus wisselen naar variant A blijft een kleine wijziging. | 23 november 2026, door mij gekozen; jij kunt het nog omdraaien |
 | Licht | Voorlopig drie keuzelijsten (licht, helderheid, scène), geschreven zoals de app dat doet. Definitief na de meting `write-matrix`. | 23 november 2026, voorlopig |
 | Minimale Home Assistant-versie | 2026.11.0. Jouw installatie draait 2026.11.2, dezelfde versie waartegen de tests draaien. | 23 november 2026 |
+| Aan of uit na een herstart | Een apparaat dat aan staat beantwoordt een nieuw abonnement binnen twee seconden en meldt daarna elke paar seconden iets; in stand-by zwijgt het. Antwoordt het apparaat wel op controles maar komt er tien seconden na een nieuw abonnement geen statusbericht, dan gaat de integratie ervan uit dat het uit staat. Het eerste statusbericht daarna geeft de werkelijke toestand. Zonder deze regel zou Home Assistant na een herstart "aan" blijven tonen voor een apparaat dat uit staat. | 23 november 2026, door mij gekozen |
+| Meetwaarden terwijl het apparaat uit staat | Fijnstof, allergenenindex, temperatuur en luchtvochtigheid zijn "onbekend" zolang het apparaat uit staat en "sensoren in stand-by" uit is, omdat het dan niet meet. Dit wijkt af van "laatste waarden blijven staan" in 6.3: een temperatuur van gisteren als actueel tonen is misleidend. | 23 november 2026, door mij gekozen; jij kunt het nog omdraaien |
+| Licht uitzetten | Voorlopig alleen de lampfunctie op uit, zonder de helderheid te wijzigen. Verwante modellen negeren een nieuwe helderheid, en dan zou uitzetten als mislukt worden gemeld. Definitief na de meting `write-matrix`. | 23 november 2026, voorlopig |
 
 **Beslissingen voor jou:**
 
