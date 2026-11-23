@@ -1,1 +1,68 @@
-# PHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration
+# Philips PureProtect 3200 (AC3220/10) voor Home Assistant
+
+Een lokale Home Assistant-integratie voor de Philips PureProtect 3200-serie. Ze praat rechtstreeks met de luchtreiniger in je netwerk, zonder cloud en zonder account.
+
+**Stand: eerste proefversie (0.1.0).** De integratie is getest tegen een nagebootste luchtreiniger in Home Assistant 2026.11, en nog niet op een echt apparaat gedraaid. Het meetprogramma waarop het ontwerp steunt is wel op een echte AC3220/10 gedraaid.
+
+## Wat de integratie biedt
+
+| Soort | Entiteiten |
+|---|---|
+| Ventilator | Aan en uit, de standen auto en slaap, vijf snelheden. Medium en turbo van het apparaat zijn hier 60% en 100%. |
+| Sensoren | Fijnstof (PM2.5), allergenenindex, temperatuur, luchtvochtigheid, resterende levensduur van het filter, uren tot reinigen, eindtijd van de timer, tijdstip van het laatste statusbericht |
+| Waarschuwingen | Filter vervangen, filter reinigen, storing |
+| Schakelaars | Kinderslot, pieptoon, Auto Plus, Allergie-slaap, sensoren in stand-by, display |
+| Keuzelijsten | Licht (uit, luchtkwaliteit, sfeerlicht), helderheid, scène van het sfeerlicht, timer |
+| Diagnostiek | Download met tellers van de verbinding en de laatste status, zonder apparaatkenmerken |
+
+Niet beschikbaar, omdat het apparaat ze niet lokaal aanbiedt: het weekschema en de instellingen voor meldingen uit de Air+ app. Gebruik daarvoor automatiseringen in Home Assistant.
+
+Lezen is voor alle entiteiten op het apparaat gemeten. Bedienen is gemeten voor aan en uit en voor het kinderslot. Voor de andere instellingen beslist de meting `write-matrix` van het meetprogramma of het apparaat ze vanaf het netwerk aanneemt; bij verwante modellen is dat voor helderheid en scène niet zo.
+
+## Hoe ze zich gedraagt
+
+- De luchtreiniger meldt alleen iets als er iets verandert, en in stand-by vrijwel niets. Stilte geldt daarom nooit als storing. Entiteiten worden pas "niet beschikbaar" als het apparaat ruim drie minuten op geen enkele controle antwoordt.
+- Na een herstart van Home Assistant tonen de entiteiten de laatst ontvangen waarden. De sensor "Laatste status ontvangen" laat zien hoe oud die zijn.
+- Het apparaat negeert instellingen zolang het uit staat. Home Assistant stuurt ze dan niet en meldt dat je het apparaat eerst moet aanzetten.
+- Een opdracht slaagt pas als het apparaat de wijziging terugmeldt. Gebeurt dat niet, dan krijg je een foutmelding in plaats van een schakelaar die terugspringt.
+
+## Installeren
+
+Vereist: Home Assistant 2026.11 of nieuwer.
+
+1. Schakel een bestaande integratie voor deze luchtreiniger uit. Twee integraties vanaf hetzelfde adres nemen elkaars statusberichten af.
+2. Geef de luchtreiniger in je router een vast IP-adres.
+3. Kopieer de map `custom_components/philips_pureprotect` uit deze repository naar de map `custom_components` in de configuratiemap van Home Assistant.
+4. Herstart Home Assistant.
+5. Ga naar Instellingen, Apparaten en diensten, Integratie toevoegen, en kies "Philips PureProtect". Vul het IP-adres in.
+
+Staat de luchtreiniger tijdens het toevoegen uit, dan zijn de waarden onbekend tot je hem aanzet.
+
+## Documentatie
+
+- [Onderzoeksrapport](docs/onderzoek.md): hoe het apparaat communiceert, waarom de bestaande integraties haperen, en het ontwerp.
+- [Metingen](docs/metingen.md): wat op een echte AC3220/10 is gemeten, en wat nog open staat.
+- [Meetprogramma](tools/probe/README.md): het programma waarmee is gemeten.
+- [Onderzoeksnotities](docs/research/README.md): de onderliggende notities met bronverwijzingen.
+
+## De verbinding proberen zonder Home Assistant
+
+`tools/session_check.py` draait de verbindingslaag van de integratie tegen een echte luchtreiniger en toont elke verandering, de uitkomst van schrijfopdrachten en de tellers. Het heeft alleen het pakket `cryptography` nodig, dat ook het meetprogramma gebruikt.
+
+```bash
+cd tools/probe && . venv/bin/activate
+python ../session_check.py 10.10.10.113 --set D03103=1 --set D03103=0
+```
+
+## Ontwikkelen
+
+De code bestaat uit twee lagen. `custom_components/philips_pureprotect/airlink` is de protocol- en sessielaag en importeert niets uit Home Assistant. De rest van de map is de Home Assistant-laag.
+
+```bash
+# Protocollaag, op elke Python vanaf 3.11
+python3 -m pytest tests/airlink
+
+# Alles, in een omgeving met Python 3.14, Home Assistant en pytest-homeassistant
+uv venv --python 3.14 && uv pip install homeassistant pytest-homeassistant
+.venv/bin/python -m pytest tests
+```

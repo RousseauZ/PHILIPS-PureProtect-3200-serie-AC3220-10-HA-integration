@@ -1,0 +1,94 @@
+{
+  "entity": {
+    "fan": {
+      "purifier": {
+        "default": "mdi:air-purifier",
+        "state": {
+          "off": "mdi:air-purifier-off"
+        },
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "auto": "mdi:fan-auto",
+              "sleep": "mdi:power-sleep"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "allergen_index": {
+        "default": "mdi:flower-pollen"
+      },
+      "filter_life": {
+        "default": "mdi:air-filter"
+      },
+      "filter_cleaning": {
+        "default": "mdi:vacuum"
+      },
+      "error_code": {
+        "default": "mdi:alert-circle-outline"
+      },
+      "fan_level": {
+        "default": "mdi:fan"
+      },
+      "last_status": {
+        "default": "mdi:clock-check-outline"
+      },
+      "timer_end": {
+        "default": "mdi:timer-outline"
+      }
+    },
+    "binary_sensor": {
+      "filter_replace": {
+        "default": "mdi:air-filter"
+      },
+      "filter_clean": {
+        "default": "mdi:vacuum"
+      }
+    },
+    "switch": {
+      "child_lock": {
+        "default": "mdi:lock",
+        "state": {
+          "off": "mdi:lock-open-variant"
+        }
+      },
+      "beep": {
+        "default": "mdi:volume-high",
+        "state": {
+          "off": "mdi:volume-off"
+        }
+      },
+      "auto_plus": {
+        "default": "mdi:fan-plus"
+      },
+      "allergy_sleep": {
+        "default": "mdi:sleep"
+      },
+      "standby_sensors": {
+        "default": "mdi:radar"
+      },
+      "display": {
+        "default": "mdi:monitor",
+        "state": {
+          "off": "mdi:monitor-off"
+        }
+      }
+    },
+    "select": {
+      "light_mode": {
+        "default": "mdi:lightbulb-outline"
+      },
+      "light_brightness": {
+        "default": "mdi:brightness-6"
+      },
+      "light_scene": {
+        "default": "mdi:palette"
+      },
+      "timer": {
+        "default": "mdi:timer-outline"
+      }
+    }
+  }
+}
