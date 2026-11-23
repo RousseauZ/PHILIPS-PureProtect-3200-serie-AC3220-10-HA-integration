@@ -48,11 +48,19 @@ async def main(args: argparse.Namespace) -> int:
     session = airlink.Session(args.host, port=args.poort)
     seen: dict[str, Any] = {}
     last_state = [session.state]
+    presumed = [False]
 
     def changed() -> None:
         if session.state is not last_state[0]:
             say(f"toestand: {last_state[0].value} -> {session.state.value}")
             last_state[0] = session.state
+        if session.presumed_standby != presumed[0]:
+            presumed[0] = session.presumed_standby
+            say(
+                "geen status na een nieuw abonnement: het apparaat staat vermoedelijk uit (stand-by)"
+                if presumed[0]
+                else "status ontvangen: het vermoeden van stand-by vervalt"
+            )
         status = session.status or {}
         if not seen and status:
             say(f"eerste status: {status.get('D01S05')}, firmware {status.get('D01S12')}, {len(status)} sleutels, aan={status.get('D03102')}")
@@ -110,7 +118,7 @@ async def main(args: argparse.Namespace) -> int:
         await session.stop()
     print("\n=== TELLERS ===")
     for key in (
-        "state", "status_is_live", "frames_received", "frames_dropped", "probes_sent", "probes_missed", "registrations_sent",
+        "state", "status_is_live", "presumed_standby", "frames_received", "frames_dropped", "probes_sent", "probes_missed", "registrations_sent",
         "refreshes_sent", "working_refresh_mode", "escalations", "commands_sent", "commands_refused", "commands_unanswered",
         "commands_unconfirmed", "socket_recreations", "identity_mismatch", "seconds_since_last_frame",
     ):  # fmt: skip

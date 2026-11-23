@@ -2,28 +2,31 @@
 
 Een lokale Home Assistant-integratie voor de Philips PureProtect 3200-serie. Ze praat rechtstreeks met de luchtreiniger in je netwerk, zonder cloud en zonder account.
 
-**Stand: eerste proefversie (0.1.0).** De integratie is getest tegen een nagebootste luchtreiniger in Home Assistant 2026.11, en nog niet op een echt apparaat gedraaid. Het meetprogramma waarop het ontwerp steunt is wel op een echte AC3220/10 gedraaid.
+**Stand: eerste proefversie (0.1.0).** De integratie is getest tegen een nagebootste luchtreiniger in Home Assistant 2026.11 en onafhankelijk nagelopen. De verbindingslaag is op een echte AC3220/10 gedraaid; de volledige integratie nog niet. Het meetprogramma waarop het ontwerp steunt is wel op een echte AC3220/10 gedraaid.
 
 ## Wat de integratie biedt
 
 | Soort | Entiteiten |
 |---|---|
-| Ventilator | Aan en uit, de standen auto en slaap, vijf snelheden. Medium en turbo van het apparaat zijn hier 60% en 100%. |
-| Sensoren | Fijnstof (PM2.5), allergenenindex, temperatuur, luchtvochtigheid, resterende levensduur van het filter, uren tot reinigen, eindtijd van de timer, tijdstip van het laatste statusbericht |
+| Ventilator | Aan en uit, de standen auto en slaap, vijf snelheden. Medium en turbo van het apparaat zijn hier 60% en 100%. In auto en slaap kiest het apparaat zelf de snelheid; de ventilator toont dan geen percentage. |
+| Sensoren | Fijnstof (PM2.5), allergenenindex, temperatuur, luchtvochtigheid, ventilatorsnelheid (stap 1 tot 5, ook in auto en slaap), resterende levensduur van het filter, uren tot reinigen, eindtijd van de timer, tijdstip van het laatste statusbericht |
 | Waarschuwingen | Filter vervangen, filter reinigen, storing |
 | Schakelaars | Kinderslot, pieptoon, Auto Plus, Allergie-slaap, sensoren in stand-by, display |
-| Keuzelijsten | Licht (uit, luchtkwaliteit, sfeerlicht), helderheid, scène van het sfeerlicht, timer |
+| Keuzelijsten | Licht (uit, luchtkwaliteit, sfeerlicht), helderheid (automatisch, laag, fel, uit), scène van het sfeerlicht, timer |
+| Knop | Filter gereinigd: zet de reinigingsteller terug, zoals de knop in de Air+ app |
 | Diagnostiek | Download met tellers van de verbinding en de laatste status, zonder apparaatkenmerken |
 
 Niet beschikbaar, omdat het apparaat ze niet lokaal aanbiedt: het weekschema en de instellingen voor meldingen uit de Air+ app. Gebruik daarvoor automatiseringen in Home Assistant.
 
-Lezen is voor alle entiteiten op het apparaat gemeten. Bedienen is gemeten voor aan en uit en voor het kinderslot. Voor de andere instellingen beslist de meting `write-matrix` van het meetprogramma of het apparaat ze vanaf het netwerk aanneemt; bij verwante modellen is dat voor helderheid en scène niet zo.
+Lezen en bedienen zijn voor alle entiteiten op een echte AC3220/10 gemeten. Alleen een storing en een filterwaarschuwing zijn nog niet voorgekomen; hoe het apparaat die meldt, is dus nog niet gezien.
 
 ## Hoe ze zich gedraagt
 
 - De luchtreiniger meldt alleen iets als er iets verandert, en in stand-by vrijwel niets. Stilte geldt daarom nooit als storing. Entiteiten worden pas "niet beschikbaar" als het apparaat ruim drie minuten op geen enkele controle antwoordt.
 - Na een herstart van Home Assistant tonen de entiteiten de laatst ontvangen waarden. De sensor "Laatste status ontvangen" laat zien hoe oud die zijn.
-- Het apparaat negeert instellingen zolang het uit staat. Home Assistant stuurt ze dan niet en meldt dat je het apparaat eerst moet aanzetten.
+- Een luchtreiniger die uit staat, kan dat niet melden. Antwoordt hij na het opstarten wel op controles, maar komt er tien seconden lang geen status, dan gaat Home Assistant ervan uit dat hij uit staat. Het eerste statusbericht daarna toont de werkelijke toestand.
+- Zolang de luchtreiniger uit staat, meet hij niet. Fijnstof, allergenenindex, temperatuur en luchtvochtigheid zijn dan "onbekend" in plaats van de laatste waarde. Met de schakelaar "Sensoren in stand-by" aan toont Home Assistant ook dan wat het apparaat meldt; of het dan blijft meten, is nog niet op het apparaat gemeten. Die schakelaar kun je alleen omzetten terwijl de luchtreiniger aan staat.
+- Het apparaat negeert instellingen zolang het uit staat. Weet Home Assistant dat het uit staat, dan stuurt het ze niet en meldt het dat je het apparaat eerst moet aanzetten.
 - Een opdracht slaagt pas als het apparaat de wijziging terugmeldt. Gebeurt dat niet, dan krijg je een foutmelding in plaats van een schakelaar die terugspringt.
 
 ## Installeren
@@ -36,7 +39,7 @@ Vereist: Home Assistant 2026.11 of nieuwer.
 4. Herstart Home Assistant.
 5. Ga naar Instellingen, Apparaten en diensten, Integratie toevoegen, en kies "Philips PureProtect". Vul het IP-adres in.
 
-Staat de luchtreiniger tijdens het toevoegen uit, dan zijn de waarden onbekend tot je hem aanzet.
+Staat de luchtreiniger tijdens het toevoegen uit, dan toont de ventilator na ongeveer tien seconden "uit" en de ventilatorsnelheid 0. De overige waarden zijn onbekend tot je hem aanzet.
 
 ## Documentatie
 

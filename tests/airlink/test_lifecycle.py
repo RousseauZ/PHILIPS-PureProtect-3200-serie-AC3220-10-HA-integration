@@ -150,7 +150,7 @@ def test_stop_ends_a_write_that_waits_for_its_confirmation(bench: Bench) -> None
         fake = bench.fake
         fake.push_on_same_value = False  # no frame at all after the discarded write
         session = await bench.live(options=bench.options(bench.quiet, confirm_timeout=30.0))
-        writing = asyncio.ensure_future(session.write({"D03105": 0}))  # will never be confirmed
+        writing = asyncio.ensure_future(session.write({"D0312A": 0}))  # will never be confirmed
         await bench.until(lambda: len(fake.controls) == 1)
         await asyncio.sleep(0.05)
         assert not writing.done()
@@ -248,6 +248,8 @@ def test_cancelled_start_and_cancelled_stop_leave_nothing_behind(bench: Bench, m
         await session.start()
         await bench.until(lambda: session.available)
         assert len(set(bench.fake.registrations)) == 1
+        # The registration is answered: from here a setting is sent at once.
+        await bench.until(lambda: session.status_is_live)
 
         # ...and a stop() that is cancelled half-way still ends everything.
         hang = True

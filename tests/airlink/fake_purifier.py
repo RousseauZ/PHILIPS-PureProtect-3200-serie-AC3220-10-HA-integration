@@ -2,30 +2,35 @@
 
 The defaults follow what was measured on a real AC3220/10 with firmware
 0.2.3 and Wi-Fi ``AWS_Philips_AIR_Combo@86`` (docs/metingen.md, measurements
-1 to 10). Every quirk of other firmware that the research found is a switch,
+1 to 16). Every quirk of other firmware that the research found is a switch,
 so that each one can be exercised without hardware.
 
 Measured and simulated by default:
 
 * one observer per source address, and the newest registration wins;
-* a new registration is answered with a status frame while the device is on
-  (measured: after 0.2 to 1.9 s); a repeated registration of the current
-  observer is not answered; a deregistration and a Reset are ignored;
+* a registration from a new port is answered with a status frame while the
+  device is on (measured: after 0.2 to 2.1 s); a repeated registration of
+  the current observer is not answered, and neither is one with a new token
+  from the port that holds the observation, which takes the stream over
+  (measurements 8, 12 and 13); a deregistration and a Reset are ignored;
 * in standby nothing is sent, unless the power key itself changes;
 * settings written in standby are acknowledged and discarded, and a write of
   ``D03102`` = 0 in standby is acknowledged without any frame;
 * with the device on, every accepted write is followed by a frame, also a
-  write of the value it already has;
+  write of the value it already has; every setting the integration uses is
+  taken from the network, the displayed index ``D0312A`` is not
+  (measurement 14);
+* a switch-on that carries a mode in the same message applies the mode, and
+  a setting sent right after the answer to a switch-on is applied
+  (measurement 14);
 * the mode reads -16 while off, and after a mode change the real fan speed
   follows in a frame of its own;
 * every sync returns a new random counter, shared by all clients, and a
   write is accepted only with that counter plus one.
 
-Not measured, so a guess: read-only keys behave like a same-value write, a
-write that switches the device on applies the other keys in that message,
-and a registration with a new token from the same port is answered like one
-from a new port. The last guess has a switch for the other outcome
-(``answer_new_token_on_same_port``), because the session leans on it.
+Not measured, so a guess: a read-only key behaves like a same-value write.
+``answer_new_token_on_same_port`` simulates firmware that, unlike the
+AC3220/10, answers a new token from the port it already serves.
 """
 
 from __future__ import annotations
@@ -116,12 +121,11 @@ class FakePurifier(asyncio.DatagramProtocol):
         # "on_change": a registration is answered only by the next change.
         # "immediate": every registration is answered at once (older firmware).
         self.answer_registration = "new_observer"
-        self.registration_answer_delay = 0.02  # measured: 0.2 to 1.9 s
-        # Not measured: whether a registration with a new token is answered
-        # when it comes from the port that already holds the observation.
-        # Measured is only that it takes the stream over. False simulates a
-        # device that answers a new port only.
-        self.answer_new_token_on_same_port = True
+        self.registration_answer_delay = 0.02  # measured: 0.2 to 2.1 s
+        # Measured (13): a registration with a new token from the port that
+        # holds the observation is not answered (0 of 6), but takes the
+        # stream over. True simulates firmware that does answer it.
+        self.answer_new_token_on_same_port = False
         self.single_observer_per_ip = True  # the newest registration wins
         self.honour_deregister = False  # Observe: 1 changes nothing
         self.honour_rst = False  # a Reset on a notification changes nothing
@@ -148,7 +152,8 @@ class FakePurifier(asyncio.DatagramProtocol):
         self.strict_counter = True
         self.refuse_control = False  # answer "failed" to every write
         self.fail_next_controls = 0  # answer "failed" to the next writes only
-        self.readonly_keys: set[str] = {"D03105", "D03137"}  # acknowledged, then discarded
+        # Acknowledged, then discarded. Measured (14): the displayed index only.
+        self.readonly_keys: set[str] = {"D0312A"}
         self.corrupt_next_frames = 0  # NUL bytes with a valid digest
         self.drop_next_notifications = 0  # change notifications that get lost
         self.malformed_next_syncs = 0

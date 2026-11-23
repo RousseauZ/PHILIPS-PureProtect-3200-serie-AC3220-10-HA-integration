@@ -72,6 +72,14 @@ class SessionOptions:
     info_attempts: int = 4
     # A new registration was answered after 0.2 to 1.9 s (measurement 8).
     request_status_timeout: float = 3.0
+    # Presumed standby. A device that is on answers a registration from a
+    # newly opened socket with a status frame within 0.2 to 1.9 s (six of six
+    # measurements) and reports every few seconds while it runs; one in
+    # standby answers every probe and sends no frame. A reachable device that
+    # leaves such a registration unanswered for this long is taken to be in
+    # standby. The start sends a second registration after refresh_min_gap,
+    # which has to fit in as well.
+    standby_presume_after: float = 10.0
 
     # Local housekeeping.
     socket_timeout: float = 3.0
@@ -169,7 +177,7 @@ class WriteResult:
     # True: a switch-off was answered with "success" and no frame followed,
     # which is what a device that already was in standby does. The session
     # took the answer for the confirmation and set the power key of its
-    # status to 0; no frame ever showed it.
+    # status to 0; no frame ever showed it (``Session.presumed_standby``).
     assumed_off: bool = False
 
 
@@ -203,6 +211,11 @@ class Diagnostics:
     commands_blocked_off: int = 0
     commands_superseded: int = 0
     switch_offs_assumed: int = 0
+    # True while the session takes the device to be in standby without a
+    # frame that says so; the counter is how often an unanswered registration
+    # led to that.
+    presumed_standby: bool = False
+    standby_presumptions: int = 0
     sync_malformed: int = 0
     socket_recreations: int = 0
     socket_errors: int = 0

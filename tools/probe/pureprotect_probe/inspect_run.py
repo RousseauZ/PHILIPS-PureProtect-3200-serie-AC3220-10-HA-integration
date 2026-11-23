@@ -84,6 +84,9 @@ def describe(events: list[dict[str, Any]]) -> list[str]:
     all_frames = [e for e in events if e["ev"] == "frame"]
     duration = events[-1]["t"] - events[0]["t"] if events else 0.0
     lines.append(f"Duur {duration / 3600:.1f} uur, {len(all_frames)} statusberichten, waarvan {len(all_frames) - len(frames)} niet te lezen.")
+    unreadable = Counter(str(e.get("decode")) for e in all_frames if not str(e.get("decode", "")).startswith("ok"))
+    if unreadable:
+        lines.append("Waarom niet te lezen: " + ", ".join(f"{reason} {count} keer" for reason, count in unreadable.most_common()) + ".")
     if not frames:
         lines.append("Er is geen leesbaar statusbericht; het apparaat stond vermoedelijk in stand-by of was onbereikbaar.")
     else:

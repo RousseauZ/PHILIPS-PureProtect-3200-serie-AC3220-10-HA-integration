@@ -29,7 +29,7 @@
       "error_code": {
         "default": "mdi:alert-circle-outline"
       },
-      "fan_level": {
+      "fan_speed": {
         "default": "mdi:fan"
       },
       "last_status": {
@@ -45,6 +45,11 @@
       },
       "filter_clean": {
         "default": "mdi:vacuum"
+      }
+    },
+    "button": {
+      "filter_cleaned": {
+        "default": "mdi:air-filter"
       }
     },
     "switch": {

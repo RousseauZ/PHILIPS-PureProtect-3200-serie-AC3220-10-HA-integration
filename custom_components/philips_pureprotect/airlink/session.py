@@ -18,12 +18,21 @@ it answers a new registration with a status frame within about 2 s while it
 is on, never in standby, and it does not answer a repeated registration with
 the same token; it ignores a deregistration and a Reset.
 
-Not measured yet: whether a registration with a new token from the port that
-already holds the observation is answered directly. Measured is that it
-takes the stream over, and that a registration from a new port is answered.
-Where the session knows that it missed a change it registers with a new
-token, which costs nothing if the device stays silent and brings the status
-if it does not.
+A registration with a new token from the port that already holds the
+observation is not answered either (measurement 13, 0 of 6), but it takes
+the stream over. Where the session knows that it missed a change it still
+registers with a new token: on the AC3220/10 that brings no status, and the
+next report does, which comes within seconds while the device runs
+(measurement 12) and carries the whole status; firmware that answers a new
+token sends it at once.
+
+Presumed standby. A device in standby cannot say that it is off, so the
+session concludes it from what was measured: a registration from a newly
+opened socket is answered within 2 s by a device that is on, and never by
+one in standby. A reachable device that leaves such a registration without
+any frame for ``standby_presume_after`` is taken to be in standby until a
+frame says otherwise (``Session.presumed_standby``). The same goes for a
+switch-off that the device accepted in silence.
 """
 
 from __future__ import annotations
@@ -63,7 +72,10 @@ from .models import (
 )
 from .transport import TraceCallback, Transport
 
-_LOGGER = logging.getLogger("airlink")
+# The name of the package as it was imported: "airlink" on its own, and a
+# child of the integration's logger inside Home Assistant, so that the debug
+# switch of the integration reaches these lines.
+_LOGGER = logging.getLogger(__package__)
 
 INFO_PATH = "/sys/dev/info"
 SYNC_PATH = "/sys/dev/sync"
@@ -239,6 +251,7 @@ class _Counters:
     commands_blocked_off: int = 0
     commands_superseded: int = 0
     switch_offs_assumed: int = 0
+    standby_presumptions: int = 0
     sync_malformed: int = 0
     socket_recreations: int = 0
     socket_errors: int = 0
@@ -346,6 +359,14 @@ class Session:
             self._wifi_firmware = restored.wifi_firmware
         self._identity: Identity | None = None
         self._identity_mismatch = False
+        self._identity_asked = 0.0  # when the info resource was last asked
+
+        # Presumed standby (see _expect_first_frame). A registration left a
+        # newly opened socket and the device has not answered anything yet:
+        self._first_frame_expected = False
+        # it has, and this runs out when no frame follows:
+        self._standby_timer: asyncio.TimerHandle | None = None
+        self._presumed_standby = False
 
         self._listeners: list[Callable[[], None]] = []
         self._notify_scheduled = False
@@ -423,9 +444,9 @@ class Session:
         """Return the last known full status; do not modify it.
 
         This is the restored status until the first live frame arrives. It
-        is what the device last sent, with one exception: after a switch-off
-        that the device accepted without sending anything, the power key is
-        set to 0 (see ``WriteResult.assumed_off``).
+        is what the device last sent, with one exception: while the device
+        is presumed to be in standby the power key reads 0 (see
+        ``presumed_standby``).
         """
         return self._status
 
@@ -433,6 +454,25 @@ class Session:
     def status_is_live(self) -> bool:
         """Return True once a frame was received in this session."""
         return self._status_is_live
+
+    @property
+    def presumed_standby(self) -> bool:
+        """Return True while the device is taken to be off without a frame that says so.
+
+        A device in standby sends nothing, so two things stand in for the
+        frame it cannot send. It is reachable and left a registration from a
+        newly opened socket without any frame for ``standby_presume_after``,
+        where a device that is on answers within 2 s (measured six times out
+        of six). Or it answered "success" to a switch-off and stayed silent
+        (``WriteResult.assumed_off``).
+
+        While this holds, a status that exists reads power 0, a setting is
+        refused unsent with DeviceOffError, switching on is sent as always
+        and switching off returns on the device's answer. Any status frame
+        ends it and brings the truth: a device that was on after all (its
+        answer was lost) reports within seconds while it runs.
+        """
+        return self._presumed_standby
 
     @property
     def last_frame_at(self) -> float | None:
@@ -456,10 +496,17 @@ class Session:
         than the expected one, or when the info resource is answered without
         any id (measured: a television does that on this port). Cleared when
         the expected id is seen again. An info request that stays unanswered
-        changes nothing. The session keeps running and does not block
-        commands; the caller decides what to do (report 6.3: show a repair
-        issue). While the flag is up, ``available`` only says that something
-        answers at the address.
+        changes nothing.
+
+        While the flag is up the session leaves that device alone: it sends
+        no registration and no sync, because the device may be a purifier
+        that another session serves, and the newest registration and the
+        latest sync would take its status stream and its counter away
+        (measurement 9). It probes with the ping only and asks the info
+        resource again every ``probe_idle``, and registers again as soon as
+        the expected device answers. It does not block commands; the caller
+        decides what to do (report 6.3: show a repair issue). ``available``
+        then only says that something answers at the address.
         """
         return self._identity_mismatch
 
@@ -524,6 +571,8 @@ class Session:
             commands_blocked_off=counters.commands_blocked_off,
             commands_superseded=counters.commands_superseded,
             switch_offs_assumed=counters.switch_offs_assumed,
+            presumed_standby=self._presumed_standby,
+            standby_presumptions=counters.standby_presumptions,
             sync_malformed=counters.sync_malformed,
             socket_recreations=counters.socket_recreations,
             socket_errors=counters.socket_errors,
@@ -543,7 +592,8 @@ class Session:
         The state is OFFLINE until the device answers anything, which a
         reachable device does within a fraction of a second. A device that
         is on then sends its status within about 2 s (measurement 8); one
-        in standby sends nothing until something changes.
+        in standby sends nothing until something changes, and is presumed
+        to be in standby after ``standby_presume_after``.
         """
         if self._stopped:
             raise SessionStoppedError("a stopped session cannot be started again")
@@ -564,8 +614,9 @@ class Session:
         if opened and not self._observations:
             # Rule 5: the registration always goes out, whether or not any
             # probe gets an answer. A socket opened here has sent it already;
-            # one that identify() opened earlier has not.
-            self._observe_from_new_endpoint()
+            # one that identify() opened earlier has not, and to the device
+            # it is as new: nothing was registered from it.
+            self._observe_from_new_endpoint(new_socket=True)
         self._spawn(self._run_forever("liveness", self._liveness_step))
         self._spawn(self._run_forever("refresh", self._refresh_step))
 
@@ -582,6 +633,7 @@ class Session:
         self._stop_done = asyncio.Event()
         self._stopped = True
         try:
+            self._forget_first_frame()
             for waiter in self._waiters:
                 waiter.stop()
             self._power_wake.set()
@@ -661,7 +713,7 @@ class Session:
                 self._counters.socket_recreations += 1
             self._socket_opened = True
             if self._started:
-                self._observe_from_new_endpoint()
+                self._observe_from_new_endpoint(new_socket=True)
             return True
 
     def _handle_socket_error(self, exc: Exception) -> None:
@@ -729,6 +781,13 @@ class Session:
         after_misses = self._misses > 0
         self._misses = 0
         self._missed_kinds.clear()
+        if self._first_frame_expected:
+            # Reachable. From here on a device that is on has the time to
+            # answer the registration; see _expect_first_frame.
+            self._first_frame_expected = False
+            self._standby_timer = asyncio.get_running_loop().call_later(
+                self._options.standby_presume_after, self._presume_standby
+            )
         if not self._started or self._state not in (SessionState.OFFLINE, SessionState.SUSPECT):
             return
         self._offline_attempt = 0
@@ -756,6 +815,16 @@ class Session:
             due = self._last_probe + opts.probe_retry
         else:
             due = (self._last_contact_mono if self._last_contact_mono is not None else now) + opts.probe_idle
+        if self._identity_mismatch and self._state is not SessionState.OFFLINE:
+            # Another device answers here. Only the info resource can tell
+            # when the expected one is back, because nothing is registered
+            # there (see identity_mismatch): ask it every probe interval,
+            # also while frames of the other device keep the probes away.
+            ask = self._identity_asked + opts.probe_idle
+            if ask <= now:
+                self._start_identity_check()
+                ask = now + opts.probe_idle
+            due = min(due, ask) if due > now else due
         if due > now:
             await asyncio.sleep(due - now)
             return
@@ -776,7 +845,10 @@ class Session:
         if not was_offline and self._misses < opts.offline_min_misses:
             return
         # The ping keeps failing: ask in the other way before believing it.
-        if await self._probe(_ProbeKind.SYNC):
+        # Not a device that is not ours: a sync would take the counter away
+        # from the session that does serve it (measurement 9).
+        kinds = {_ProbeKind.PING} if self._identity_mismatch else set(_ProbeKind)
+        if _ProbeKind.SYNC in kinds and await self._probe(_ProbeKind.SYNC):
             return
         now = time.monotonic()
         if not was_offline:
@@ -784,7 +856,7 @@ class Session:
             if (
                 self._misses < opts.offline_min_misses
                 or silence < opts.offline_min_silence
-                or self._missed_kinds != set(_ProbeKind)
+                or not self._missed_kinds >= kinds
             ):
                 return
             self._set_state(SessionState.OFFLINE)
@@ -878,13 +950,18 @@ class Session:
             if identity is None:
                 continue
             self._identity = identity
-            self._judge_device_id(identity.device_id)
+            was_another = self._identity_mismatch
+            if self._judge_device_id(identity.device_id) and was_another:
+                # Nothing was registered while the other device answered.
+                # With a new token, so that a device that is on may answer.
+                self._request_refresh(force=True, afresh=True)
             return identity
         return None
 
     def _start_identity_check(self) -> None:
         if self._expected_id is None or self._identity_task is not None:
             return
+        self._identity_asked = time.monotonic()
         task = self._spawn(self._run_once("the identity check", self.identify))
         self._identity_task = task
         task.add_done_callback(self._identity_checked)
@@ -909,26 +986,100 @@ class Session:
         self._counters.identity_mismatches += 1
         if not self._identity_mismatch:
             self._identity_mismatch = True
+            # Whatever that device does says nothing about ours.
+            self._forget_first_frame()
             _LOGGER.warning("%s: another device answers at this address", self._host)
             self._schedule_notify()
         return False
 
     # -- observation (rules 5 and 6) ---------------------------------------
 
-    def _observe_from_new_endpoint(self) -> None:
-        """Start over with a fresh token on a socket that was just opened.
+    def _observe_from_new_endpoint(self, *, new_socket: bool = False) -> None:
+        """Start over with a fresh token, on a new socket or towards a new address.
 
         The token is fixed for as long as the socket lives (rule 5). A new
         socket is a new endpoint to the device, and a new token makes its
         registration exactly the kind that was measured to take the stream
         over and to be answered (measurements 8 and 9). The same token from
         another port was never tried.
+
+        Only with ``new_socket`` is the registration the measured kind for
+        certain. A name that leads to another address may lead to the same
+        device, which then still knows this port.
         """
         for observation in self._observations:
             self._transport.remove_stream(observation.token)
         self._observations = []
         self._ladder = 0
+        self._forget_first_frame()
         self._register_new_token(RefreshMode.SAME_TOKEN)
+        if new_socket and self._observations[-1].registrations:
+            self._expect_first_frame()
+
+    # -- presumed standby --------------------------------------------------
+
+    def _expect_first_frame(self) -> None:
+        """Watch what the device does with a registration from a newly opened socket.
+
+        Measured (docs/metingen.md, "Eerste statusbericht na een nieuw
+        abonnement"): a device that is on answers such a registration with
+        a status frame after 0.2 to 1.9 s, six times out of six, and while
+        it runs it reports every few seconds anyway (measurement 12). One in
+        standby answers every probe and sends no frame at all. So a device
+        that demonstrably answers something and then lets
+        ``standby_presume_after`` pass without a frame is in standby.
+
+        The time runs from the first answer, not from the registration. The
+        registration may have left while the device was away (a socket
+        replaced on entering OFFLINE); the one that follows its return (see
+        _handle_contact) is then the first it gets from this port. At a
+        start a second registration follows after ``refresh_min_gap``, for
+        when the first one was lost.
+
+        Nothing is concluded from a registration with a new token on a
+        socket in use: the AC3220/10 does not answer that one, on or off
+        (measurement 13).
+        """
+        self._first_frame_expected = True
+
+    def _forget_first_frame(self) -> None:
+        """Stop watching for the answer to a registration; no verdict follows."""
+        self._first_frame_expected = False
+        if self._standby_timer is not None:
+            self._standby_timer.cancel()
+            self._standby_timer = None
+            self._power_wake.set()
+
+    def _presume_standby(self) -> None:
+        """The time for a frame is up: a reachable device that sent none is in standby."""
+        self._standby_timer = None
+        self._power_wake.set()
+        if self._stopped or self._misses or self._identity_mismatch:
+            # No verdict about a device that stopped answering meanwhile,
+            # or that is not ours.
+            return
+        self._counters.standby_presumptions += 1
+        _LOGGER.debug("%s: reachable and no status frame after a new registration; presuming standby", self._host)
+        self._take_for_off()
+
+    def _take_for_off(self) -> None:
+        """Record that the device is off although no frame said so (see ``presumed_standby``)."""
+        status = self._status
+        if status is not None and status.get(POWER_KEY) != 0:
+            self._status = {**status, POWER_KEY: 0}
+        elif self._presumed_standby:
+            return  # nothing new to tell
+        self._presumed_standby = True
+        self._power_wake.set()
+        self._schedule_notify()
+
+    def _known_power(self) -> Any:
+        """Return the power state the session goes by; None when it has none."""
+        if self._status is not None:
+            return self._status.get(POWER_KEY)
+        return 0 if self._presumed_standby else None
+
+    # -- registrations -----------------------------------------------------
 
     def _send_registration(self) -> None:
         """Send the registration for the newest token; no answer is expected.
@@ -944,7 +1095,9 @@ class Session:
             self._observe_from_new_endpoint()
             return
         # Without a socket there is no observation yet; opening one registers.
-        if self._observations:
+        # Nothing is registered at a device that is not ours: it would take
+        # the stream away from the session that serves it (measurement 9).
+        if self._observations and not self._identity_mismatch:
             observation = self._observations[-1]
             msg = build_request(MType.NON, GET, self._transport.next_mid(), observation.token, STATUS_PATH, observe=0)
             if self._send(msg):
@@ -961,10 +1114,10 @@ class Session:
 
         A repeated registration with the same token gets no answer while the
         device still holds it (measurement 8). A new token takes the stream
-        over at once (measured) and makes the registration a new one, the
-        kind that was answered within 2 s when it came from a new port.
-        Whether it is answered from the same port is not measured yet; if
-        not, nothing is lost but the answer. In standby nothing answers.
+        over at once (measured). The AC3220/10 does not answer it from the
+        same port (measurement 13), so nothing is gained there but the
+        stream; firmware that does answer sends the status at once. In
+        standby nothing answers.
 
         Not a step on the ladder of rule 6: the label stays.
         """
@@ -974,6 +1127,8 @@ class Session:
             self._send_registration()
 
     def _send_deregistration(self, observation: _Observation) -> None:
+        if self._identity_mismatch:
+            return  # not our device; some firmware takes this for a registration
         self._send(build_request(MType.NON, GET, self._transport.next_mid(), observation.token, STATUS_PATH, observe=1))
 
     def _request_refresh(self, *, force: bool = False, afresh: bool = False) -> None:
@@ -1092,6 +1247,8 @@ class Session:
         except _FrameError as err:
             self._dropped[err.reason] = self._dropped.get(err.reason, 0) + 1
             _LOGGER.debug("%s: status frame dropped: %s", self._host, err.reason)
+            # Something was sent, so this is not the silence of standby.
+            self._forget_first_frame()
             if err.missed_change:
                 # The device holds this observer, so it would not answer the
                 # same token again: ask with a new one.
@@ -1130,6 +1287,9 @@ class Session:
             self._last_runtime_mono = now
         self._status = reported
         self._status_is_live = True
+        # A frame is the truth: it ends the watch and whatever was presumed.
+        self._forget_first_frame()
+        self._presumed_standby = False
         self._last_frame_mono = now
         self._last_frame_wall = time.time()
         self._keys.update(reported)
@@ -1157,12 +1317,10 @@ class Session:
         device but the token it reports to. In standby nothing answers, so
         False is the normal result for a device that is off.
 
-        Not measured yet: whether a device that is on answers this. Measured
-        (measurement 8) is that a new registration from a new port is
-        answered within about 2 s, that one with the same token is not, and
-        that a new token from the same port takes the stream over. Until the
-        probe has measured the remaining case, False can also come from a
-        device that is on, and nothing should be built on it.
+        Measured on the AC3220/10 (measurement 13): a new token from the
+        port in use is not answered, on or off, so there this returns False
+        whatever the device does, and nothing should be built on it. Only a
+        registration from a new port is answered (0.2 to 2.1 s).
         """
         self._check_running()
         waiter = _FrameWaiter({})
@@ -1194,6 +1352,9 @@ class Session:
         A setting waits while another call of this session switches the
         device on or off, and is then judged by what that call brought, so
         that a scene can switch on and set a mode with two calls at once.
+        It also waits while a registration from a new socket is still open
+        (see ``presumed_standby``), instead of being judged on a status
+        from before. Both waits count towards the limit of the write.
 
         Switching off does not fail for want of a frame: a device that
         already is in standby answers "success" and sends nothing, and that
@@ -1304,26 +1465,32 @@ class Session:
 
     def _power_in_transition(self, write: _Write) -> bool:
         """Return True while another call is changing the power state."""
-        known = None if self._status is None else self._status.get(POWER_KEY)
+        known = self._known_power()
         return any(other is not write and other.desired.get(POWER_KEY, known) != known for other in self._writes)
 
     async def _hold_for_power(self, write: _Write, deadline: float) -> None:
-        """Hold a setting back while this session switches the device on or off.
+        """Hold a setting back while it is open whether the device is on.
 
         The device discards a setting it gets in standby and still answers
         "success" (measurement 5), and it reports a switch-on only after 0.2
         to 1.1 s. A setting that comes together with a switch-on is neither
         refused on the status from before nor sent ahead of that report: it
         waits for the outcome and is judged by it. The same goes for one
-        that comes together with a switch-off. The wait counts towards the
-        limit of the write.
+        that comes together with a switch-off.
+
+        It is open as well while a reachable device has the time to answer
+        a registration from a new socket (see _expect_first_frame): the
+        status is then one from before, and within seconds a frame or the
+        lack of one says what the device is now.
+
+        The wait counts towards the limit of the write.
         """
         if POWER_KEY in write.desired:
             return
         with contextlib.suppress(TimeoutError):
             async with asyncio.timeout_at(deadline):
                 # A write that a newer one took over has nothing to wait for.
-                while write.desired and self._power_in_transition(write):
+                while write.desired and (self._power_in_transition(write) or self._standby_timer is not None):
                     self._power_wake.clear()
                     await self._power_wake.wait()
                     self._check_running()
@@ -1339,9 +1506,17 @@ class Session:
         switching off a device that is off, which is never refused.
         """
         status = self._status
-        if status is None:
-            return False
         desired = write.desired
+        if status is None:
+            if not self._presumed_standby:
+                return False
+            # Never a status, and presumed to be in standby: off is all
+            # that is known. Only switching on can change anything.
+            if write.switches_off:
+                return True
+            if desired.get(POWER_KEY) != 1:
+                raise DeviceOffError("the device is off and would discard this", write.asked)
+            return False
         accepted = write.waiter.accepted
         shown = all(status.get(key) in accepted[key] for key in desired)
         # Only a status of this session shows what the device has now. For a
@@ -1363,15 +1538,12 @@ class Session:
         after the off-frame was lost, or after a power cut left the device
         in standby: without this every switch-off would fail and the status
         would go on saying on. If the device is on after all, its next frame
-        says so.
+        says so. A session that never had a status keeps it as
+        ``presumed_standby``.
         """
         self._counters.switch_offs_assumed += 1
-        status = self._status
-        if status is not None and status.get(POWER_KEY) != 0:
-            _LOGGER.debug("%s: switched off without a status frame; taking the answer for it", self._host)
-            self._status = {**status, POWER_KEY: 0}
-            self._power_wake.set()
-            self._schedule_notify()
+        _LOGGER.debug("%s: switched off without a status frame; taking the answer for it", self._host)
+        self._take_for_off()
 
     @staticmethod
     def _validated(values: Mapping[str, int]) -> dict[str, int]:

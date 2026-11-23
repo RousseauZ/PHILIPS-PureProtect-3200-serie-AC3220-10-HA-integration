@@ -153,6 +153,34 @@ def test_change_lost_in_a_corrupt_frame_is_fetched_with_a_new_token(bench: Bench
         # The token that was given up is deregistered once the new one delivers.
         await bench.until(lambda: (client, token) in fake.deregistrations)
 
+    # Firmware that answers a new token from the port it already serves; the
+    # AC3220/10 does not (measurement 13).
+    bench.run(body, answer_new_token_on_same_port=True)
+
+
+def test_change_lost_in_a_corrupt_frame_arrives_with_the_next_report_on_the_measured_device(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.quiet)
+        await bench.settled()
+        client, token = fake.registrations[-1]
+        fake.corrupt_next_frames = 1
+        fake.change("D03221", 55)
+        # The AC3220/10 does not answer the new registration (measurement 13),
+        # but the new token takes the stream over, and a device that is on
+        # reports again within seconds (measurement 12). Every report is the
+        # whole status, so the next one brings the lost change along.
+        await bench.until(lambda: len(fake.registrations) > 1 and fake.registrations[-1][1] != token)
+        await asyncio.sleep(0.1)
+        assert session.status is not None and session.status["D03221"] != 55
+        fake.change("D03125", 51)
+        await bench.until(
+            lambda: session.status is not None and (session.status["D03221"], session.status["D03125"]) == (55, 51),
+            "the next report did not reach the session",
+        )
+        assert list(fake.observers) == [(client, fake.registrations[-1][1])]
+        assert session.diagnostics().frames_dropped == {"bad_ciphertext": 1}
+
     bench.run(body)
 
 
@@ -483,7 +511,9 @@ def test_start_registers_on_a_socket_that_identify_opened(bench: Bench) -> None:
         assert not result.resent and session.diagnostics().escalations == 0
         assert await session.request_status() is True
 
-    bench.run(body)
+    # Firmware that answers a new token from the port it already serves; the
+    # AC3220/10 does not (measurement 13).
+    bench.run(body, answer_new_token_on_same_port=True)
 
 
 def test_snapshot_survives_a_restart(bench: Bench) -> None:
@@ -602,7 +632,9 @@ def test_request_status_registers_anew_and_reports_whether_a_frame_came(bench: B
         assert await session.request_status() is False
         assert session.status["D03221"] == 123
 
-    bench.run(body)
+    # Firmware that answers a new token from the port it already serves; the
+    # AC3220/10 does not (measurement 13).
+    bench.run(body, answer_new_token_on_same_port=True)
 
 
 def test_request_status_gets_nothing_from_a_device_that_answers_a_new_port_only(bench: Bench) -> None:

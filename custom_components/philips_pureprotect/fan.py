@@ -9,21 +9,11 @@ from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import Key
+from .const import LEVEL_TO_SPEED, MODE_TO_SPEED, PRESET_MODES, SPEEDS, Key
 from .coordinator import PureProtectConfigEntry, PureProtectCoordinator
 from .entity import PureProtectEntity
 
 PARALLEL_UPDATES = 0
-
-# Modes that are a choice of the device, not a fixed speed.
-PRESET_MODES = {"auto": 0, "sleep": 17}
-# The five fixed speeds, written as a mode.
-SPEEDS = (1, 2, 3, 4, 5)
-# What the device reports as running speed (Key.FAN_LEVEL), mapped to a speed.
-# Measured: speed 5 and turbo both report 18; medium reports 3.
-LEVEL_TO_SPEED = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 18: 5}
-# Modes that stand for a fixed speed, for when the running speed is unknown.
-MODE_TO_SPEED = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 19: 3, 18: 5}
 
 
 async def async_setup_entry(
@@ -64,14 +54,28 @@ class PureProtectFan(PureProtectEntity, FanEntity):
 
     @property
     def percentage(self) -> int | None:
-        """Return the running speed, in every mode."""
+        """Return the fixed speed that is set; None in auto and sleep.
+
+        Home Assistant takes percentage and preset mode as excluding each
+        other: a scene stored in auto would otherwise carry the speed of
+        that moment and take the purifier out of auto when it is restored.
+        What the fan really does in auto is in the sensor "Fan speed".
+
+        The speed comes from the mode, which is what a command changes and
+        what its confirmation shows. The running speed follows in a frame
+        of its own (measured: 0.1 to 1 s later) and only stands in for a
+        mode without a known speed.
+        """
         if self.is_on is None:
             return None
         if not self.is_on:
             return 0
-        speed = LEVEL_TO_SPEED.get(self.coordinator.value(Key.FAN_LEVEL))  # type: ignore[arg-type]
+        mode = self.coordinator.value(Key.MODE)
+        if mode in PRESET_MODES.values():
+            return None
+        speed = MODE_TO_SPEED.get(mode)  # type: ignore[arg-type]
         if speed is None:
-            speed = MODE_TO_SPEED.get(self.coordinator.value(Key.MODE))  # type: ignore[arg-type]
+            speed = LEVEL_TO_SPEED.get(self.coordinator.value(Key.FAN_LEVEL))  # type: ignore[arg-type]
         return None if speed is None else round(speed * 100 / len(SPEEDS))
 
     async def async_turn_on(self, percentage: int | None = None, preset_mode: str | None = None, **kwargs: Any) -> None:
@@ -79,15 +83,23 @@ class PureProtectFan(PureProtectEntity, FanEntity):
         if percentage == 0:
             await self.async_turn_off()
             return
-        # Power first and on its own: the device discards a setting it gets
-        # while it is off, and whether it takes one in the same message as the
-        # power key is not measured yet.
-        if not self.is_on:
-            await self.coordinator.async_write({Key.POWER: 1})
+        # "Switch on" is always sent. What is shown as on may be off: a
+        # purifier in standby reports nothing, so a status from before a
+        # restart, or one whose switch-off frame was lost, is never corrected.
+        # For a mode or a speed only a status received in this session counts
+        # as proof that the purifier is on.
+        #
+        # A mode travels in the same message as the switch-on: the device
+        # applies both (measurement 14), and it does not run in its previous
+        # mode for a moment first.
+        values: dict[str, int] = {}
         if preset_mode is not None:
-            await self.coordinator.async_write({Key.MODE: PRESET_MODES[preset_mode]})
+            values[Key.MODE] = PRESET_MODES[preset_mode]
         elif percentage is not None:
-            await self.coordinator.async_write({Key.MODE: _speed_for(percentage)})
+            values[Key.MODE] = _speed_for(percentage)
+        if not values or not (self.is_on and self.coordinator.session.status_is_live):
+            values[Key.POWER] = 1
+        await self.coordinator.async_write(values)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Switch off."""

@@ -72,7 +72,10 @@ class PureProtectConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(identity.device_id)
                 self._abort_if_unique_id_mismatch(reason="wrong_device")
-                return self.async_update_reload_and_abort(entry, data_updates={CONF_HOST: host})
+                # With the reason named, the text is this integration's own.
+                return self.async_update_reload_and_abort(
+                    entry, data_updates={CONF_HOST: host}, reason="reconfigure_successful"
+                )
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(SCHEMA, user_input or {CONF_HOST: entry.data[CONF_HOST]}),

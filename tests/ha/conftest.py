@@ -66,6 +66,7 @@ if not collect_ignore_glob:
         info_timeout=0.25,
         info_attempts=2,
         request_status_timeout=0.3,
+        standby_presume_after=0.5,
         socket_timeout=1.0,
         error_pause=0.05,
     )
@@ -74,7 +75,24 @@ if not collect_ignore_glob:
     def fast_session(monkeypatch: pytest.MonkeyPatch, socket_enabled: None, hass_storage: dict[str, Any]) -> None:
         """Run every session with test timings, allow its UDP socket to the loopback and keep storage in memory."""
         monkeypatch.setattr("custom_components.philips_pureprotect.coordinator.SESSION_OPTIONS", FAST)
+        monkeypatch.setattr("custom_components.philips_pureprotect.coordinator.DEVICE_OFF_RETRY_DELAY", 0.05)
         monkeypatch.setattr("custom_components.philips_pureprotect.config_flow.IDENTIFY_OPTIONS", FAST)
+
+    @pytest.fixture
+    def hass_config_dir(hass_tmp_config_dir: str) -> str:
+        """Give every test a configuration directory of its own, so that none leaves files in the repository."""
+        return hass_tmp_config_dir
+
+    @pytest.fixture
+    def slow_to_presume(monkeypatch: pytest.MonkeyPatch) -> None:
+        """Show the first seconds after a start for as long as the test takes.
+
+        A session takes a reachable purifier that sends no status to be in standby after a set time
+        (10 s; 0.5 s in these tests). With this fixture that time does not come.
+        """
+        monkeypatch.setattr(
+            "custom_components.philips_pureprotect.coordinator.SESSION_OPTIONS", options(standby_presume_after=60.0)
+        )
 
     @pytest.fixture
     def default_port(monkeypatch: pytest.MonkeyPatch, fake: FakePurifier) -> int:
@@ -132,3 +150,41 @@ async def until(
 def options(**changes: Any) -> Any:
     """Return the fast options with some values replaced."""
     return dataclasses.replace(FAST, **changes)
+
+
+def state(hass: Any, entity_id: str) -> str:
+    """Return the state of an entity that has to exist."""
+    found = hass.states.get(entity_id)
+    assert found is not None, f"{entity_id} does not exist"
+    return str(found.state)
+
+
+def measured_delays(fake: Any) -> None:
+    """Give the simulated purifier the measured delays, scaled like the test timings.
+
+    The test timings are the real ones divided by about twelve. Measured (docs/metingen.md): a write is
+    reported after 0.1 to 1.1 s, a new registration is answered after 0.2 to 1.9 s, and the running speed
+    follows a change of mode 0.1 to 1 s later in a frame of its own.
+    """
+    fake.echo_delay = 0.05
+    fake.registration_answer_delay = 0.1
+    fake.speed_follows_after = 0.15
+
+
+async def restart_while_the_purifier_went_to_standby(hass: Any, fake: Any, setup: Any) -> Any:
+    """Stop the entry with the purifier on, switch the purifier off, and start the entry again.
+
+    Measured (measurements 2 and 8): in standby the purifier answers the ping, the sync and the info
+    request and sends no status at all, also not in answer to the registration of the new session. What
+    was stored says "on".
+    """
+    entry = await setup()
+    assert state(hass, "fan.woonkamer") == "on"
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    fake.power_off(notify=False)
+    await setup(live=False)
+    session = entry.runtime_data.session
+    await until(hass, lambda: session.available, "the purifier in standby does not answer the probes")
+    assert not session.status_is_live
+    return entry

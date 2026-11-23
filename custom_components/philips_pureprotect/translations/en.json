@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Add a Philips PureProtect air purifier",
-        "description": "Enter the address of the air purifier on your network. You find it in your router. Give the purifier a fixed address there, so that it stays reachable.",
+        "description": "Enter the address of the air purifier on your network. You can find it in your router. Give the purifier a fixed address there, so that it stays reachable.",
         "data": {
           "host": "IP address or host name"
         },
@@ -24,7 +24,7 @@
     },
     "error": {
       "cannot_connect": "Nothing answered at this address. Check the address, and that the purifier has power and is on your Wi-Fi network.",
-      "not_a_purifier": "A device answered at this address, but it is not a supported air purifier."
+      "not_a_purifier": "Something answered at this address, but it is not a Philips air purifier. Check the address."
     },
     "abort": {
       "already_configured": "This air purifier is already set up. Its address has been updated.",
@@ -58,8 +58,8 @@
       "error_code": {
         "name": "Error code"
       },
-      "fan_level": {
-        "name": "Fan level"
+      "fan_speed": {
+        "name": "Fan speed"
       },
       "last_status": {
         "name": "Last status received"
@@ -74,6 +74,14 @@
       },
       "filter_clean": {
         "name": "Clean filter"
+      },
+      "fault": {
+        "name": "Fault"
+      }
+    },
+    "button": {
+      "filter_cleaned": {
+        "name": "Filter cleaned"
       }
     },
     "switch": {
@@ -110,7 +118,8 @@
         "state": {
           "auto": "Automatic",
           "low": "Low",
-          "bright": "Bright"
+          "bright": "Bright",
+          "off": "Off"
         }
       },
       "light_scene": {
@@ -147,16 +156,19 @@
       "message": "{name} is switched off and ignores settings while it is off. Switch it on first."
     },
     "refused": {
-      "message": "{name} refused the command."
+      "message": "{name} refused the command. This can happen when another program on the Home Assistant computer talks to the purifier at the same time, for example an older integration for this purifier. Disable that one and try again."
     },
     "not_confirmed": {
-      "message": "{name} accepted the command but never reported the change."
+      "message": "{name} accepted the command but did not report the change. If the purifier is off, switch it on first. Otherwise this model probably does not take this setting from the network; use the Air+ app or the buttons on the purifier instead."
     },
     "unreachable": {
-      "message": "{name} did not answer."
+      "message": "{name} did not answer. Check that the purifier has power and is connected to your Wi-Fi network, and try again."
     },
     "wrong_device": {
       "message": "Another device answers at the address of {name}. Nothing was sent."
+    },
+    "filter_interval_unknown": {
+      "message": "{name} does not report how many hours a filter cleaning lasts, so the counter cannot be set back."
     }
   },
   "issues": {

@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
+import pytest
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant.common import MockConfigEntry
 
+import custom_components.philips_pureprotect as integration
 from custom_components.philips_pureprotect.config_flow import async_identify
 from custom_components.philips_pureprotect.const import CONF_MODEL, DOMAIN
 
@@ -24,6 +28,11 @@ async def start(hass: HomeAssistant) -> Any:
 
 async def submit(hass: HomeAssistant, flow: Any, host: str) -> Any:
     return await hass.config_entries.flow.async_configure(flow["flow_id"], {CONF_HOST: host})
+
+
+def suggested(form: Any) -> dict[str, Any]:
+    """Return what a form shows in its fields before the user types."""
+    return {str(key): (key.description or {}).get("suggested_value") for key in form["data_schema"].schema}
 
 
 async def test_add_by_address(hass: HomeAssistant, fake, default_port: int) -> None:
@@ -104,3 +113,66 @@ async def test_reconfigure_refuses_another_purifier(hass: HomeAssistant, fake, d
     result = await submit(hass, await entry.start_reconfigure_flow(hass), "127.0.0.1")
     assert result["type"] is FlowResultType.ABORT and result["reason"] == "wrong_device"
     assert entry.data[CONF_HOST] == "192.0.2.7"
+
+
+async def test_the_form_keeps_the_address_that_did_not_answer(hass: HomeAssistant, fake, default_port: int) -> None:
+    flow = await start(hass)
+    fake.silent = True
+    result = await submit(hass, flow, "127.0.0.1")
+    assert result["type"] is FlowResultType.FORM and result["errors"] == {"base": "cannot_connect"}
+    assert suggested(result) == {CONF_HOST: "127.0.0.1"}  # a typing error can be corrected, not retyped
+
+
+async def test_a_purifier_without_a_name_is_called_after_its_model(
+    hass: HomeAssistant, fake, default_port: int
+) -> None:
+    fake.state["D01S03"] = ""
+    result = await submit(hass, await start(hass), "127.0.0.1")
+    assert result["type"] is FlowResultType.CREATE_ENTRY and result["title"] == "AC3220/10"
+    await hass.async_block_till_done()
+
+
+async def test_reconfigure_shows_the_current_address_and_says_what_went_wrong(
+    hass: HomeAssistant, fake, default_port: int
+) -> None:
+    # This is the form the repair issue sends the owner to.
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="Woonkamer", unique_id=fake.state["DeviceId"], data={CONF_HOST: "192.0.2.7"}
+    )
+    entry.add_to_hass(hass)
+    flow = await entry.start_reconfigure_flow(hass)
+    assert suggested(flow) == {CONF_HOST: "192.0.2.7"}
+
+    fake.silent = True
+    result = await submit(hass, flow, " 127.0.0.1 ")
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "reconfigure"
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert suggested(result) == {CONF_HOST: " 127.0.0.1 "}
+    assert entry.data[CONF_HOST] == "192.0.2.7"
+
+    fake.silent = False
+    result = await submit(hass, flow, " 127.0.0.1 ")
+    assert result["type"] is FlowResultType.ABORT
+    assert entry.data[CONF_HOST] == "127.0.0.1"  # without the spaces
+    await hass.async_block_till_done()
+    await until(hass, lambda: entry.runtime_data.session.status_is_live)
+
+
+@pytest.mark.parametrize(
+    ("language", "text"), [("en", "The address has been changed."), ("nl", "Het adres is gewijzigd.")]
+)
+async def test_the_text_for_a_changed_address_is_the_one_of_this_integration(
+    hass: HomeAssistant, fake, default_port: int, language: str, text: str
+) -> None:
+    """Without a reason of its own, Home Assistant would show its general text for a reconfiguration."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="Woonkamer", unique_id=fake.state["DeviceId"], data={CONF_HOST: "192.0.2.7"}
+    )
+    entry.add_to_hass(hass)
+    result = await submit(hass, await entry.start_reconfigure_flow(hass), "127.0.0.1")
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.ABORT and result["reason"] == "reconfigure_successful"
+    # No other domain to take the text from: it is the one in the files of this integration.
+    assert (result.get("translation_domain") or DOMAIN) == DOMAIN
+    translations = Path(integration.__file__).parent / "translations" / f"{language}.json"
+    assert json.loads(translations.read_text("utf-8"))["config"]["abort"][result["reason"]] == text

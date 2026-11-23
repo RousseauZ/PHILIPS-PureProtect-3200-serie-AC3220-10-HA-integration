@@ -26,6 +26,9 @@ def test_describe_tells_power_state_changes_and_what_followed_a_registration(tmp
         frame(121.0),  # repeats the known status: an answer
         {"t": 180.0, "ev": "tx", "what": "refresh-same"},
         frame(200.0, changed={"D03102": 0}),
+        {"t": 210.0, "ev": "frame", "decode": "err:digest_mismatch"},
+        {"t": 220.0, "ev": "frame", "decode": "err:blockwise"},
+        {"t": 230.0, "ev": "frame", "decode": "err:digest_mismatch"},
         {"t": 30.0, "ev": "sync", "ok": True, "latency": 0.1},
         {"t": 31.0, "ev": "sync", "ok": False, "latency": None},
         {"t": 32.0, "ev": "sync", "ok": False, "latency": None},
@@ -33,7 +36,8 @@ def test_describe_tells_power_state_changes_and_what_followed_a_registration(tmp
         {"t": 3600.0, "ev": "result"},
     ]
     text = "\n".join(inspect_run.describe(inspect_run.load(write(tmp_path / "events.jsonl", events))))
-    assert "Duur 1.0 uur, 5 statusberichten" in text
+    assert "Duur 1.0 uur, 8 statusberichten, waarvan 3 niet te lezen." in text
+    assert "Waarom niet te lezen: err:digest_mismatch 2 keer, err:blockwise 1 keer." in text
     assert "Bij het eerste bericht: aan/uit (D03102) = 1, sensoren in stand-by (D03134) = 0" in text
     assert "Aan/uit veranderde tijdens de meting: 3 min: 0." in text
     assert "D03221 (fijnstof PM2.5): 2 keer" in text

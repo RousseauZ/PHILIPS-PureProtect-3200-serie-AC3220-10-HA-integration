@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Philips PureProtect-luchtreiniger toevoegen",
-        "description": "Vul het adres van de luchtreiniger in je netwerk in. Je vindt het in je router. Geef de luchtreiniger daar een vast adres, zodat hij bereikbaar blijft.",
+        "description": "Vul het netwerkadres van de luchtreiniger in. Je vindt het in je router. Geef de luchtreiniger daar een vast adres, zodat hij bereikbaar blijft.",
         "data": {
           "host": "IP-adres of hostnaam"
         },
@@ -24,7 +24,7 @@
     },
     "error": {
       "cannot_connect": "Er antwoordde niets op dit adres. Controleer het adres, en of de luchtreiniger stroom heeft en met je wifi is verbonden.",
-      "not_a_purifier": "Op dit adres antwoordde een apparaat, maar het is geen ondersteunde luchtreiniger."
+      "not_a_purifier": "Op dit adres antwoordde iets, maar het is geen Philips-luchtreiniger. Controleer het adres."
     },
     "abort": {
       "already_configured": "Deze luchtreiniger is al ingesteld. Het adres is bijgewerkt.",
@@ -58,8 +58,8 @@
       "error_code": {
         "name": "Foutcode"
       },
-      "fan_level": {
-        "name": "Toerentalstand"
+      "fan_speed": {
+        "name": "Ventilatorsnelheid"
       },
       "last_status": {
         "name": "Laatste status ontvangen"
@@ -74,6 +74,14 @@
       },
       "filter_clean": {
         "name": "Filter reinigen"
+      },
+      "fault": {
+        "name": "Storing"
+      }
+    },
+    "button": {
+      "filter_cleaned": {
+        "name": "Filter gereinigd"
       }
     },
     "switch": {
@@ -110,7 +118,8 @@
         "state": {
           "auto": "Automatisch",
           "low": "Laag",
-          "bright": "Fel"
+          "bright": "Fel",
+          "off": "Uit"
         }
       },
       "light_scene": {
@@ -147,22 +156,25 @@
       "message": "{name} staat uit en negeert instellingen zolang hij uit staat. Zet hem eerst aan."
     },
     "refused": {
-      "message": "{name} weigerde de opdracht."
+      "message": "{name} weigerde de opdracht. Dat kan gebeuren als een ander programma op de computer van Home Assistant tegelijk met de luchtreiniger praat, bijvoorbeeld een oudere integratie voor deze luchtreiniger. Schakel die uit en probeer het opnieuw."
     },
     "not_confirmed": {
-      "message": "{name} nam de opdracht aan, maar meldde de wijziging nooit terug."
+      "message": "{name} nam de opdracht aan, maar meldde de wijziging niet terug. Staat de luchtreiniger uit, zet hem dan eerst aan. Anders neemt dit model deze instelling waarschijnlijk niet aan via het netwerk; gebruik dan de Air+ app of de knoppen op de luchtreiniger."
     },
     "unreachable": {
-      "message": "{name} gaf geen antwoord."
+      "message": "{name} gaf geen antwoord. Controleer of de luchtreiniger stroom heeft en met je wifi is verbonden, en probeer het opnieuw."
     },
     "wrong_device": {
       "message": "Op het adres van {name} antwoordt een ander apparaat. Er is niets verstuurd."
+    },
+    "filter_interval_unknown": {
+      "message": "{name} meldt niet hoeveel uur een reinigingsinterval duurt, dus de teller kan niet worden teruggezet."
     }
   },
   "issues": {
     "wrong_device": {
       "title": "Op het adres van {name} antwoordt een ander apparaat",
-      "description": "Het apparaat op {host} is niet de luchtreiniger die als {name} is ingesteld. Waarschijnlijk is het adres veranderd. Zoek het nieuwe adres op in je router en kies Opnieuw configureren bij de integratie om het in te vullen. Tot die tijd staat de luchtreiniger als niet beschikbaar."
+      "description": "Het apparaat op {host} is niet de luchtreiniger die als {name} is ingesteld. Waarschijnlijk is het adres veranderd. Zoek het nieuwe adres op in je router en kies Opnieuw configureren bij de integratie om het in te vullen. Tot die tijd wordt de luchtreiniger als niet beschikbaar getoond."
     }
   }
 }
