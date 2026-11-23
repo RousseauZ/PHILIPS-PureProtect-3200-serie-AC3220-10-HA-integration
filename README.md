@@ -2,7 +2,7 @@
 
 Een lokale Home Assistant-integratie voor de Philips PureProtect 3200-serie. Ze praat rechtstreeks met de luchtreiniger in je netwerk, zonder cloud en zonder account.
 
-**Stand: eerste proefversie (0.1.0).** De integratie is getest tegen een nagebootste luchtreiniger in Home Assistant 2026.11 en onafhankelijk nagelopen. De verbindingslaag is op een echte AC3220/10 gedraaid; de volledige integratie nog niet. Het meetprogramma waarop het ontwerp steunt is wel op een echte AC3220/10 gedraaid.
+**Stand: eerste proefversie (0.1.0).** De integratie is getest tegen een nagebootste luchtreiniger in Home Assistant 2026.11 en onafhankelijk nagelopen. Sinds 23 november 2026 draait ze op een echte AC3220/10 in Home Assistant 2026.11.2; de duurtest loopt. Het meetprogramma waarop het ontwerp steunt is wel op een echte AC3220/10 gedraaid.
 
 ## Wat de integratie biedt
 

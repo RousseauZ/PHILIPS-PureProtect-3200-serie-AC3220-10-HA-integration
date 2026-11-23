@@ -230,6 +230,17 @@ Alle gewijzigde instellingen zijn daarna teruggezet en bevestigd.
 
 0 van 10 beantwoord. De televisie antwoordt wel op een info-aanvraag via broadcast (meting 11), maar niet op een ping.
 
+### Meting 17: de integratie in Home Assistant 2026.11.2, apparaat aan
+
+Eerste installatie op 23 november 2026 om 20:36.
+
+| Onderwerp | Uitkomst |
+|---|---|
+| Toevoegen met het IP-adres | Gelukt; model AC3220/10 en firmware 0.2.3 staan op de apparaatpagina |
+| Entiteiten | Alle verwacht aanwezig, met waarden: allergenenindex, luchtvochtigheid, PM2.5, temperatuur, ventilatorsnelheid, filtertellers, licht, helderheid, scène, timer en de schakelaars |
+| Bediend vanuit Home Assistant | Licht naar sfeerlicht, Auto Plus aan, Allergie-slaap aan, ventilator uit en weer aan: elke keer gevolgd door de nieuwe toestand |
+| Ontbreekt | Het pictogram van de integratie ("logo not available") |
+
 ### Eerste statusbericht na een nieuw abonnement, over alle metingen
 
 | Toestand | Tijd tot het eerste bericht |
