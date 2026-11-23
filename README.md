@@ -12,8 +12,9 @@ Een lokale Home Assistant-integratie voor de Philips PureProtect 3200-serie. Ze 
 | Sensoren | Fijnstof (PM2.5), allergenenindex, temperatuur, luchtvochtigheid, ventilatorsnelheid (stap 1 tot 5, ook in auto en slaap), resterende levensduur van het filter, uren tot reinigen, eindtijd van de timer, tijdstip van het laatste statusbericht |
 | Waarschuwingen | Filter vervangen, filter reinigen, storing |
 | Schakelaars | Kinderslot, pieptoon, Auto Plus, Allergie-slaap, sensoren in stand-by, display |
+| Stand | Eén keuzelijst met alle standen van het apparaat: uit, auto, slaap, medium, turbo en snelheid 1 tot 5. Staat op de apparaatpagina onder Bediening |
 | Keuzelijsten | Licht (uit, luchtkwaliteit, sfeerlicht), helderheid (automatisch, laag, fel, uit), scène van het sfeerlicht, timer |
-| Knop | Filter gereinigd: zet de reinigingsteller terug, zoals de knop in de Air+ app |
+| Knoppen | Filter gereinigd: zet de reinigingsteller terug, zoals de knop in de Air+ app. Nieuw filter geplaatst: zet de resterende levensduur van het filter op vol; alleen na het plaatsen van een nieuw filter |
 | Diagnostiek | Download met tellers van de verbinding en de laatste status, zonder apparaatkenmerken |
 
 Niet beschikbaar, omdat het apparaat ze niet lokaal aanbiedt: het weekschema en de instellingen voor meldingen uit de Air+ app. Gebruik daarvoor automatiseringen in Home Assistant.

@@ -55,3 +55,27 @@ async def test_filter_cleaned_needs_an_interval(hass: HomeAssistant, fake, setup
     with pytest.raises(HomeAssistantError) as raised:
         await press(hass)
     assert raised.value.translation_key == "filter_interval_unknown" and len(fake.controls) == sent
+
+
+async def test_new_filter_sets_the_filter_life_back_to_full(hass: HomeAssistant, fake, setup) -> None:
+    fake.state["D0540E"] = 0
+    await setup()
+    assert hass.states.get("binary_sensor.woonkamer_replace_filter").state == "on"
+    await hass.services.async_call(
+        "button", "press", {"entity_id": "button.woonkamer_new_filter_fitted"}, blocking=True
+    )
+    # The full life, which the device reports itself (measurement 14: the counter is writable).
+    assert fake.controls[-1] == {"D0540E": 9600} and fake.state["D0540E"] == 9600
+    assert hass.states.get("binary_sensor.woonkamer_replace_filter").state == "off"
+    assert hass.states.get("sensor.woonkamer_filter_life_remaining").state == "100"
+
+
+async def test_new_filter_needs_a_filter_life(hass: HomeAssistant, fake, setup) -> None:
+    fake.state["D05408"] = 0
+    await setup()
+    sent = len(fake.controls)
+    with pytest.raises(HomeAssistantError) as raised:
+        await hass.services.async_call(
+            "button", "press", {"entity_id": "button.woonkamer_new_filter_fitted"}, blocking=True
+        )
+    assert raised.value.translation_key == "filter_life_unknown" and len(fake.controls) == sent

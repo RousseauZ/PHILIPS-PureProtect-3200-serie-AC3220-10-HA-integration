@@ -10,7 +10,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import Key
+from .const import DEVICE_MODES, Key
 from .coordinator import PureProtectConfigEntry, PureProtectCoordinator
 from .entity import PureProtectEntity, add_when_reported
 
@@ -109,6 +109,13 @@ async def async_setup_entry(
     add_when_reported(
         entry, async_add_entities, SELECTS, lambda description: (description.status_key,), PureProtectSelect
     )
+    add_when_reported(
+        entry,
+        async_add_entities,
+        [ModeSelect],
+        lambda _: (Key.POWER, Key.MODE),
+        lambda coordinator, cls: cls(coordinator),
+    )
 
 
 class PureProtectSelect(PureProtectEntity, SelectEntity):
@@ -137,4 +144,48 @@ class PureProtectSelect(PureProtectEntity, SelectEntity):
             shown = companion.when_status_shows
             if shown is None or self.coordinator.value(companion.key) in shown:
                 values[companion.key] = companion.value
+        await self.coordinator.async_write(values)
+
+
+MODE_OFF = "off"
+MODE_OPTIONS = [MODE_OFF, *DEVICE_MODES]
+
+
+class ModeSelect(PureProtectEntity, SelectEntity):
+    """Every mode of the purifier in one list, with the names of its buttons.
+
+    The fan entity follows Home Assistant's model: auto and sleep as preset
+    modes, and medium and turbo as the speeds they run at. This select shows
+    the device's own modes, on the device page and for dashboards, and also
+    switches the purifier on and off.
+    """
+
+    _attr_translation_key = "mode"
+    _attr_options = MODE_OPTIONS
+
+    def __init__(self, coordinator: PureProtectCoordinator) -> None:
+        """Create the select."""
+        super().__init__(coordinator, "mode")
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the mode the device reports, or off."""
+        power = self.coordinator.value(Key.POWER)
+        if power is None:
+            return None
+        if power == 0:
+            return MODE_OFF
+        mode = self.coordinator.value(Key.MODE)
+        return next((name for name, value in DEVICE_MODES.items() if value == mode), None)
+
+    async def async_select_option(self, option: str) -> None:
+        """Switch to a mode, switching the purifier on in the same message when needed."""
+        if option == MODE_OFF:
+            await self.coordinator.async_write({Key.POWER: 0})
+            return
+        values = {Key.MODE: DEVICE_MODES[option]}
+        # As for the fan: only a status received in this session proves that
+        # the purifier is on. A switch-on carries the mode along (measurement 14).
+        if not (self.coordinator.value(Key.POWER) == 1 and self.coordinator.session.status_is_live):
+            values[Key.POWER] = 1
         await self.coordinator.async_write(values)

@@ -82,6 +82,9 @@
     "button": {
       "filter_cleaned": {
         "name": "Filter gereinigd"
+      },
+      "filter_replaced": {
+        "name": "Nieuw filter geplaatst"
       }
     },
     "switch": {
@@ -105,6 +108,21 @@
       }
     },
     "select": {
+      "mode": {
+        "name": "Stand",
+        "state": {
+          "off": "Uit",
+          "auto": "Auto",
+          "sleep": "Slaap",
+          "medium": "Medium",
+          "turbo": "Turbo",
+          "speed_1": "Snelheid 1",
+          "speed_2": "Snelheid 2",
+          "speed_3": "Snelheid 3",
+          "speed_4": "Snelheid 4",
+          "speed_5": "Snelheid 5"
+        }
+      },
       "light_mode": {
         "name": "Licht",
         "state": {
@@ -169,6 +187,9 @@
     },
     "filter_interval_unknown": {
       "message": "{name} meldt niet hoeveel uur een reinigingsinterval duurt, dus de teller kan niet worden teruggezet."
+    },
+    "filter_life_unknown": {
+      "message": "{name} meldt niet hoeveel uur een filter meegaat, dus de teller kan niet worden teruggezet."
     }
   },
   "issues": {

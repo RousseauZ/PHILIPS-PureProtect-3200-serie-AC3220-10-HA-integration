@@ -22,7 +22,7 @@ from pytest_homeassistant.common import MockConfigEntry
 
 import custom_components.philips_pureprotect as integration
 from custom_components.philips_pureprotect.const import DOMAIN
-from custom_components.philips_pureprotect.select import SELECTS
+from custom_components.philips_pureprotect.select import MODE_OPTIONS, SELECTS
 
 from .conftest import until
 
@@ -115,7 +115,8 @@ async def test_an_error_names_the_purifier(hass: HomeAssistant, fake, setup) -> 
 def test_every_choice_of_a_select_has_a_text() -> None:
     for language in LANGUAGES:
         selects = texts(language)["entity"]["select"]
-        assert set(selects) == {description.translation_key for description in SELECTS}, language
+        assert set(selects) == {description.translation_key for description in SELECTS} | {"mode"}, language
+        assert set(selects["mode"]["state"]) == set(MODE_OPTIONS), language
         for description in SELECTS:
             assert description.translation_key is not None
             assert set(selects[description.translation_key]["state"]) == set(description.choices), (

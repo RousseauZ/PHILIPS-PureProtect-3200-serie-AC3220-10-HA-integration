@@ -82,6 +82,9 @@
     "button": {
       "filter_cleaned": {
         "name": "Filter cleaned"
+      },
+      "filter_replaced": {
+        "name": "New filter fitted"
       }
     },
     "switch": {
@@ -105,6 +108,21 @@
       }
     },
     "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "off": "Off",
+          "auto": "Auto",
+          "sleep": "Sleep",
+          "medium": "Medium",
+          "turbo": "Turbo",
+          "speed_1": "Speed 1",
+          "speed_2": "Speed 2",
+          "speed_3": "Speed 3",
+          "speed_4": "Speed 4",
+          "speed_5": "Speed 5"
+        }
+      },
       "light_mode": {
         "name": "Light",
         "state": {
@@ -169,6 +187,9 @@
     },
     "filter_interval_unknown": {
       "message": "{name} does not report how many hours a filter cleaning lasts, so the counter cannot be set back."
+    },
+    "filter_life_unknown": {
+      "message": "{name} does not report how many hours a filter lasts, so the counter cannot be set back."
     }
   },
   "issues": {
