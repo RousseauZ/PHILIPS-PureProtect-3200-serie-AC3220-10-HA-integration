@@ -44,7 +44,7 @@ from .const import (
     STORAGE_VERSION,
     Key,
 )
-from .search import async_search, read_mac
+from .search import async_addresses, async_search, is_address, read_mac
 
 type PureProtectConfigEntry = ConfigEntry[PureProtectCoordinator]
 
@@ -53,12 +53,18 @@ SESSION_OPTIONS = SessionOptions()
 # A setting that is refused because the purifier is off is tried once more
 # after this many seconds; see PureProtectCoordinator.async_write.
 DEVICE_OFF_RETRY_DELAY = 0.5
-# A purifier that does not answer for this many seconds is looked for on the
-# network, in case it got another address; checked this often (seconds).
-REDISCOVER_AFTER = 300.0
+# A purifier that is lost at its address (OFFLINE, or another device answers
+# there) for this many seconds is looked for on the network, in case it got
+# another address. OFFLINE itself takes three minutes of silence, so this is
+# about five minutes after its last answer. Every search that does not find
+# it doubles the wait, up to REDISCOVER_MAX. Checked every REDISCOVER_CHECK.
+REDISCOVER_AFTER = 120.0
+REDISCOVER_MAX = 3600.0
 REDISCOVER_CHECK = 60.0
-# A MAC address that was not in the neighbour table is looked up again after this many seconds.
+# A MAC address that was not in the neighbour table is looked up again after
+# this many seconds, twice as long after every further miss, up to MAC_RETRY_MAX.
 MAC_RETRY = 60.0
+MAC_RETRY_MAX = 3600.0
 
 
 def status_store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]:
@@ -103,10 +109,14 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._saved_frame_at: float | None = None
         self._issue_shown = False
         self._registered_versions: tuple[Any, Any] = (None, None)
-        self._offline_since: float | None = None
+        # Since when the purifier is lost at its address (monotonic); None while it is not.
+        self._lost_since: float | None = None
+        self._search_wait = REDISCOVER_AFTER
         self._searching = False
         self._mac_known = False
         self._mac_tried: float | None = None
+        self._mac_wait = MAC_RETRY
+        self._mac_reading = False
         self.data = {}
 
     async def async_start(self) -> None:
@@ -135,7 +145,9 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._saved_kept, self._saved_frame_at = self._kept(), self.session.last_frame_at
         entry.async_on_unload(self.session.add_listener(self._handle_session_update))
         entry.async_on_unload(
-            async_track_time_interval(self.hass, self._async_check_address, timedelta(seconds=REDISCOVER_CHECK))
+            async_track_time_interval(
+                self.hass, self._async_tick, timedelta(seconds=REDISCOVER_CHECK), cancel_on_shutdown=True
+            )
         )
         await self.session.start()
 
@@ -198,80 +210,144 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.async_set_updated_data(self._shown_status())
         self._update_device()
         self._schedule_save()
-        if self.session.state is SessionState.OFFLINE:
-            if self._offline_since is None:
-                self._offline_since = time.monotonic()
-        else:
-            self._offline_since = None
-            self._learn_mac()
+        self._note_lost()
+        self.async_learn_mac()
 
     # -- finding the purifier again ------------------------------------------
 
+    def _is_ours(self, device_id: str) -> bool:
+        return device_id.casefold() == self.device_id.casefold()
+
+    @property
+    def _lost(self) -> bool:
+        """Return True while the purifier is not where the entry says: nothing answers, or another device does."""
+        return self.session.state is SessionState.OFFLINE or self.session.identity_mismatch
+
     @callback
-    def _learn_mac(self) -> None:
+    def _note_lost(self) -> None:
+        if not self._lost:
+            self._lost_since = None
+            self._search_wait = REDISCOVER_AFTER
+        elif self._lost_since is None:
+            self._lost_since = time.monotonic()
+
+    @property
+    def _identity_confirmed(self) -> bool:
+        """Return True while the purifier at the address is known to be this one.
+
+        By a status frame (the session drops frames of another device) or by
+        the info resource. The first ping answer comes before either.
+        """
+        session = self.session
+        if session.identity_mismatch or session.state not in (SessionState.LIVE, SessionState.REACHABLE):
+            return False
+        identity = session.identity
+        return session.status_is_live or (identity is not None and self._is_ours(identity.device_id))
+
+    @callback
+    def async_learn_mac(self) -> None:
         """Note the purifier's MAC address in the device registry, once.
 
         With it Home Assistant's DHCP watcher recognises the purifier when it
         gets another address, also when it was added by hand (manifest:
         ``registered_devices``). The operating system learned the MAC from
-        the exchange that just took place.
+        the exchanges with the device. Tried again after every session
+        update and every REDISCOVER_CHECK, at most once per MAC_RETRY (more
+        seldom after misses); the setup calls it once the entities, and with
+        them the device, exist.
         """
-        if self._mac_known or not self.session.available or self.session.identity_mismatch:
+        if self._mac_known or self._mac_reading or not self._identity_confirmed:
             return
         now = time.monotonic()
-        if self._mac_tried is not None and now - self._mac_tried < MAC_RETRY:
+        if self._mac_tried is not None and now - self._mac_tried < self._mac_wait:
             return
+        if self._device() is None:
+            return  # no entity was added yet; the setup asks again once they are
         self._mac_tried = now
+        self._mac_reading = True
         self.config_entry.async_create_background_task(self.hass, self._async_learn_mac(), f"{DOMAIN} MAC {self.host}")
 
-    async def _async_learn_mac(self) -> None:
-        mac = await self.hass.async_add_executor_job(read_mac, self.host)
-        if mac is None:
-            return
+    def _device(self) -> dr.DeviceEntry | None:
         registry = dr.async_get(self.hass)
-        device = registry.async_get_device_by_identifier((DOMAIN, self.device_id), self.config_entry.entry_id)
-        if device is None:
+        return registry.async_get_device_by_identifier((DOMAIN, self.device_id), self.config_entry.entry_id)
+
+    async def _async_learn_mac(self) -> None:
+        try:
+            # A host name is looked up the way the session looks it up.
+            addresses = await async_addresses(self.hass, self.host)
+            mac = None
+            if len(addresses) == 1:
+                mac = await self.hass.async_add_executor_job(read_mac, next(iter(addresses)))
+        finally:
+            self._mac_reading = False
+        if mac is None:
+            # Not in the table: Home Assistant may not share the host's network, or the name leads to several
+            # addresses. Not worth a lookup every minute for ever.
+            self._mac_wait = min(self._mac_wait * 2, MAC_RETRY_MAX)
             return
+        device = self._device()
+        if device is None or not self._identity_confirmed:
+            return  # also when another device turned up at the address meanwhile
         connection = (CONNECTION_NETWORK_MAC, mac)
         if connection in device.connections:
             self._mac_known = True
             return
-        if any(other.id != device.id for other in registry.async_get_devices(connections={connection})):
-            # Two devices with one MAC is a wrong reading, not a fact to record.
-            LOGGER.debug("%s: MAC %s already belongs to another device; not recorded", self.host, mac)
-            return
+        registry = dr.async_get(self.hass)
+        for other in registry.async_get_devices(connections={connection}):
+            owner = self.hass.config_entries.async_get_entry(other.config_entry_id)
+            if other.id != device.id and owner is not None and owner.domain == DOMAIN:
+                # Two purifiers with one MAC is a wrong reading, not a fact to record. A device of another
+                # integration with this MAC is normal: a router's device tracker has one for every client.
+                LOGGER.debug("%s: MAC %s already belongs to another purifier; not recorded", self.host, mac)
+                return
         kept = {item for item in device.connections if item[0] != CONNECTION_NETWORK_MAC}
         registry.async_update_device(device.id, new_connections=kept | {connection})
         self._mac_known = True
 
-    async def _async_check_address(self, _now: datetime) -> None:
-        """Look for the purifier on the network when it stopped answering at its address.
+    @callback
+    def _async_tick(self, _now: datetime) -> None:
+        """Every REDISCOVER_CHECK: try the MAC address again, and look for a purifier that is lost.
 
         Also when it never answered at all since the start: a purifier that
         moved while Home Assistant was down is never reachable at the stored
-        address.
+        address. The search is a task of the entry, so unloading stops it.
         """
-        if self.session.state is not SessionState.OFFLINE:
-            self._offline_since = None
-            return
-        if self._offline_since is None:
-            self._offline_since = time.monotonic()
-        if self._searching or time.monotonic() - self._offline_since < REDISCOVER_AFTER:
+        self.async_learn_mac()
+        self._note_lost()
+        if self._lost_since is None or self._searching or time.monotonic() - self._lost_since < self._search_wait:
             return
         self._searching = True
+        self.config_entry.async_create_background_task(
+            self.hass, self._async_look_for_it(), f"{DOMAIN} search for {self.config_entry.title}"
+        )
+
+    async def _async_look_for_it(self) -> None:
+        """Search the network; move the entry when the purifier answers at another address."""
+        entry = self.config_entry
         try:
-            found = await async_search(self.hass, self.config_entry.data.get(CONF_PORT, DEFAULT_PORT))
+            found = await async_search(self.hass, entry.data.get(CONF_PORT, DEFAULT_PORT))
+            answers = sorted(host for host, identity in found.items() if self._is_ours(identity.device_id))
+            current = await async_addresses(self.hass, self.host) if answers else set()
         finally:
             self._searching = False
-        if self._offline_since is not None:
-            self._offline_since = time.monotonic()  # the next search after another while
-        for host, identity in found.items():
-            if identity.device_id.casefold() == self.device_id.casefold() and host != self.host:
-                entry = self.config_entry
-                LOGGER.info("%s answers at a new address, %s instead of %s", entry.title, host, self.host)
-                self.hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_HOST: host})
+        if self._lost_since is not None:
+            # The next search after a longer while: a purifier that is unplugged is not looked for every few
+            # minutes for ever.
+            self._lost_since = time.monotonic()
+            self._search_wait = min(self._search_wait * 2, REDISCOVER_MAX)
+        if not answers or not self._lost:
+            return  # not found, or it answered again at its address while the search ran
+        if here := [host for host in answers if host in current]:
+            if self.session.identity_mismatch and not is_address(self.host):
+                # The name leads to the purifier now. The session looks a name up again by itself while nothing
+                # answers, but not while another device answers at the address it looked up before.
+                LOGGER.info("%s answers where %s leads now, %s; reloading", entry.title, self.host, here[0])
                 self.hass.config_entries.async_schedule_reload(entry.entry_id)
-                return
+            return
+        host = answers[0]
+        LOGGER.info("%s answers at a new address, %s instead of %s", entry.title, host, self.host)
+        self.hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_HOST: host})
+        self.hass.config_entries.async_schedule_reload(entry.entry_id)
 
     @callback
     def _update_device(self) -> None:
@@ -279,12 +355,11 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         versions = (self.data.get(Key.MODEL), self.data.get(Key.FIRMWARE))
         if versions == self._registered_versions or not all(isinstance(text, str) for text in versions):
             return
-        registry = dr.async_get(self.hass)
-        device = registry.async_get_device_by_identifier((DOMAIN, self.device_id), self.config_entry.entry_id)
+        device = self._device()
         if device is None:
             return  # no entity was added yet; they take these values along
         self._registered_versions = versions
-        registry.async_update_device(device.id, model=versions[0], sw_version=versions[1])
+        dr.async_get(self.hass).async_update_device(device.id, model=versions[0], sw_version=versions[1])
 
     # -- the stored status -------------------------------------------------
 

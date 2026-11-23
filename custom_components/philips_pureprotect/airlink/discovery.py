@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import json
 import logging
 import os
@@ -81,9 +82,11 @@ async def discover(
     Targets are broadcast addresses, or single addresses. Every round sends
     one request to each target and listens ``round_wait`` seconds; the first
     answer of an address counts. An address that cannot be sent to is
-    skipped. Never raises for the network: no answer means an empty result.
+    skipped, and so is anything that is not an IPv4 address: the socket
+    would look it up as a name, blocking the event loop. Never raises for
+    the network: no answer means an empty result.
     """
-    targets = list(dict.fromkeys(targets))
+    targets = list(dict.fromkeys(target for target in targets if _is_ipv4(target)))
     if not targets:
         return {}
     loop = asyncio.get_running_loop()
@@ -108,3 +111,12 @@ async def discover(
     finally:
         transport.close()
     return dict(collector.found)
+
+
+def _is_ipv4(target: str) -> bool:
+    try:
+        ipaddress.IPv4Address(target)
+    except ValueError:
+        _LOGGER.debug("search: %r is not an IPv4 address; skipped", target)
+        return False
+    return True

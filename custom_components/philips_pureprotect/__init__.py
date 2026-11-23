@@ -35,6 +35,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PureProtectConfigEntry) 
     except BaseException:
         await coordinator.async_stop()
         raise
+    # The device exists now; on a first start the purifier may have answered before it did.
+    coordinator.async_learn_mac()
     return True
 
 

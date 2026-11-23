@@ -81,7 +81,9 @@ if not collect_ignore_glob:
         monkeypatch.setattr("custom_components.philips_pureprotect.search.async_search_targets", _no_targets)
         monkeypatch.setattr("custom_components.philips_pureprotect.search.SEARCH_ROUNDS", 2)
         monkeypatch.setattr("custom_components.philips_pureprotect.search.SEARCH_WAIT", 0.1)
+        # Nor does any test read the neighbour table of the machine it runs on. The coordinator holds its own reference.
         monkeypatch.setattr("custom_components.philips_pureprotect.search.read_mac", lambda host: None)
+        monkeypatch.setattr("custom_components.philips_pureprotect.coordinator.read_mac", lambda host: None)
 
     async def _no_targets(hass: Any) -> list[str]:
         return []

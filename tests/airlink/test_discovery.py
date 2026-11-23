@@ -76,6 +76,15 @@ def test_an_address_that_cannot_be_sent_to_is_skipped(bench: Bench) -> None:
     bench.run(body)
 
 
+def test_a_name_is_not_looked_up(bench: Bench) -> None:
+    # The socket would resolve it in the event loop, blocking it. "localhost" would lead to the simulator.
+    async def body() -> None:
+        assert await discover(["localhost"], port=bench.fake.port, rounds=1, round_wait=0.1) == {}
+        assert not bench.fake.requests
+
+    bench.run(body)
+
+
 def test_parse_info_wants_both_ids() -> None:
     assert parse_info(TELEVISION) is None
     assert parse_info(b"\x00 not json") is None

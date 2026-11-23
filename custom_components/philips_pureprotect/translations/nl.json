@@ -45,7 +45,8 @@
     "error": {
       "cannot_connect": "Er antwoordde niets op dit adres. Controleer het adres, en of de luchtreiniger stroom heeft en met je wifi is verbonden.",
       "not_a_purifier": "Op dit adres antwoordde iets, maar het is geen Philips-luchtreiniger. Controleer het adres.",
-      "no_devices_found": "Er antwoordde geen luchtreiniger in je netwerk. Controleer of hij stroom heeft en met je wifi is verbonden, of vul het adres zelf in. Je vindt het in je router."
+      "no_devices_found": "Er antwoordde geen luchtreiniger in je netwerk. Controleer of hij stroom heeft en met je wifi is verbonden, of vul het adres zelf in. Je vindt het in je router.",
+      "no_new_devices": "Elke luchtreiniger die antwoordde, is al ingesteld. Wil je er nog een toevoegen, controleer dan of hij stroom heeft en met je wifi is verbonden, of vul het adres zelf in. Je vindt het in je router."
     },
     "abort": {
       "already_configured": "Deze luchtreiniger is al ingesteld. Het adres is bijgewerkt.",

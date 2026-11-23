@@ -45,7 +45,8 @@
     "error": {
       "cannot_connect": "Nothing answered at this address. Check the address, and that the purifier has power and is on your Wi-Fi network.",
       "not_a_purifier": "Something answered at this address, but it is not a Philips air purifier. Check the address.",
-      "no_devices_found": "No air purifier answered on your network. Check that it has power and is on your Wi-Fi, or enter its address. You can find it in your router."
+      "no_devices_found": "No air purifier answered on your network. Check that it has power and is on your Wi-Fi, or enter its address. You can find it in your router.",
+      "no_new_devices": "Every air purifier that answered is already set up. To add another one, check that it has power and is on your Wi-Fi, or enter its address. You can find it in your router."
     },
     "abort": {
       "already_configured": "This air purifier is already set up. Its address has been updated.",
