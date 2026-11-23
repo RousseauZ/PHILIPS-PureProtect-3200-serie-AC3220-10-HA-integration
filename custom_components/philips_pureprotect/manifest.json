@@ -1,12 +1,49 @@
 {
   "domain": "philips_pureprotect",
   "name": "Philips PureProtect",
-  "codeowners": ["@RousseauZ"],
+  "codeowners": [
+    "@RousseauZ"
+  ],
   "config_flow": true,
+  "dependencies": [
+    "network"
+  ],
+  "dhcp": [
+    {
+      "registered_devices": true
+    },
+    {
+      "hostname": "mxchip*"
+    },
+    {
+      "macaddress": "6879C4*"
+    },
+    {
+      "macaddress": "88A68D*"
+    },
+    {
+      "macaddress": "D0BAE4*"
+    },
+    {
+      "macaddress": "C89346*"
+    },
+    {
+      "macaddress": "B0F893*"
+    },
+    {
+      "macaddress": "047863*"
+    },
+    {
+      "macaddress": "849DC2*"
+    },
+    {
+      "macaddress": "80A036*"
+    }
+  ],
   "documentation": "https://github.com/RousseauZ/PHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration",
   "integration_type": "device",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/RousseauZ/PHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration/issues",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

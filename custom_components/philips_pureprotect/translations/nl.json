@@ -1,8 +1,24 @@
 {
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
         "title": "Philips PureProtect-luchtreiniger toevoegen",
+        "description": "Home Assistant kan de luchtreiniger in je netwerk zoeken, of je vult het adres zelf in.",
+        "menu_options": {
+          "search": "Zoeken in mijn netwerk",
+          "manual": "Adres zelf invullen"
+        }
+      },
+      "search": {
+        "title": "Gevonden luchtreinigers",
+        "description": "Kies de luchtreiniger die je wilt toevoegen. Geef hem in je router een vast adres, zodat hij bereikbaar blijft.",
+        "data": {
+          "device": "Luchtreiniger"
+        }
+      },
+      "manual": {
+        "title": "Adres invullen",
         "description": "Vul het netwerkadres van de luchtreiniger in. Je vindt het in je router. Geef de luchtreiniger daar een vast adres, zodat hij bereikbaar blijft.",
         "data": {
           "host": "IP-adres of hostnaam"
@@ -10,6 +26,10 @@
         "data_description": {
           "host": "Bijvoorbeeld 192.168.1.50."
         }
+      },
+      "discovery_confirm": {
+        "title": "Luchtreiniger gevonden",
+        "description": "{name} ({model}) is in je netwerk gevonden op {host}. Wil je hem toevoegen aan Home Assistant?"
       },
       "reconfigure": {
         "title": "Adres wijzigen",
@@ -24,12 +44,15 @@
     },
     "error": {
       "cannot_connect": "Er antwoordde niets op dit adres. Controleer het adres, en of de luchtreiniger stroom heeft en met je wifi is verbonden.",
-      "not_a_purifier": "Op dit adres antwoordde iets, maar het is geen Philips-luchtreiniger. Controleer het adres."
+      "not_a_purifier": "Op dit adres antwoordde iets, maar het is geen Philips-luchtreiniger. Controleer het adres.",
+      "no_devices_found": "Er antwoordde geen luchtreiniger in je netwerk. Controleer of hij stroom heeft en met je wifi is verbonden, of vul het adres zelf in. Je vindt het in je router."
     },
     "abort": {
       "already_configured": "Deze luchtreiniger is al ingesteld. Het adres is bijgewerkt.",
       "reconfigure_successful": "Het adres is gewijzigd.",
-      "wrong_device": "Op dit adres antwoordt een andere luchtreiniger. Het adres is niet gewijzigd."
+      "wrong_device": "Op dit adres antwoordt een andere luchtreiniger. Het adres is niet gewijzigd.",
+      "cannot_connect": "Het apparaat gaf geen antwoord.",
+      "not_a_purifier": "Het gevonden apparaat is geen Philips-luchtreiniger."
     }
   },
   "entity": {

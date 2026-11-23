@@ -532,9 +532,9 @@ Het programma voert deze reeks uit:
 | 1 | Meetprogramma bouwen en de reeks uit 7.2 draaien | Ontwerpkeuzes vastgelegd; de kern van de protocollaag bestaat | Programma klaar. Elf metingen gedaan, zie [metingen.md](metingen.md); daar staat ook wat nog open is |
 | 2 | Protocol- en sessiepakket met nagebootst apparaat en tests | Betrouwbare verbinding, los van Home Assistant te testen | Klaar en door drie controleurs nagelopen; 157 tests. Draait tegen het echte apparaat: status binnen na 1 s, schrijfopdrachten bevestigd na 0,3 s (meting 15) |
 | 3 | Minimale integratie: instellen met IP-adres, coordinator, ventilator en sensoren | Werkend in je eigen Home Assistant | Geschreven, samen met stap 4. Door vier controleurs nagelopen, de bewezen fouten opgelost en dat onafhankelijk nagecontroleerd; 119 tests in Home Assistant 2026.11. Draait sinds 23 november 2026 in je eigen Home Assistant 2026.11.2 |
-| 4 | Overige entiteiten, diagnostiek, DHCP-herkenning, herconfiguratie, vertalingen | Volledige functionaliteit | Entiteiten, de knop "Filter gereinigd", diagnostiek, herconfiguratie en vertalingen zijn er. Nog niet: DHCP-herkenning, zoeken in het netwerk, een pictogram |
+| 4 | Overige entiteiten, diagnostiek, DHCP-herkenning, herconfiguratie, vertalingen | Volledige functionaliteit | Alles is er: entiteiten, knoppen, diagnostiek, herconfiguratie, vertalingen, een pictogram, en automatisch vinden (zoeken in het netwerk, DHCP-herkenning, en zelf opnieuw zoeken als het adres verandert) |
 | 5 | Duurtest van één tot twee weken op je eigen apparaat, met de diagnostiektellers | Aantoonbaar stabiel | Begonnen op 23 november 2026 |
-| 6 | Eerste release met installatielink; kleine verbeteringen aanbieden bij de bestaande projecten | Publiek beschikbaar | Nog niet begonnen |
+| 6 | Eerste release met installatielink; kleine verbeteringen aanbieden bij de bestaande projecten | Publiek beschikbaar | Releases met versienummer vanaf 0.2.0, via HACS als aangepaste repository. Opname in de standaardlijst van HACS: bewust niet |
 
 ---
 

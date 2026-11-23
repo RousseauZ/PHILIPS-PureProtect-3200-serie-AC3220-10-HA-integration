@@ -6,6 +6,7 @@ docs/onderzoek.md chapter 6. It imports nothing from Home Assistant, so it
 can be tested against a simulated device and published on its own later.
 """
 
+from .discovery import discover, parse_info
 from .errors import (
     AirlinkError,
     DeviceOffError,
@@ -48,4 +49,6 @@ __all__ = [
     "WriteError",
     "WriteResult",
     "accepted_readback",
+    "discover",
+    "parse_info",
 ]

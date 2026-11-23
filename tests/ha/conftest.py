@@ -77,6 +77,24 @@ if not collect_ignore_glob:
         monkeypatch.setattr("custom_components.philips_pureprotect.coordinator.SESSION_OPTIONS", FAST)
         monkeypatch.setattr("custom_components.philips_pureprotect.coordinator.DEVICE_OFF_RETRY_DELAY", 0.05)
         monkeypatch.setattr("custom_components.philips_pureprotect.config_flow.IDENTIFY_OPTIONS", FAST)
+        # No test reaches beyond the loopback: a search finds nothing unless a test points it at the simulator.
+        monkeypatch.setattr("custom_components.philips_pureprotect.search.async_search_targets", _no_targets)
+        monkeypatch.setattr("custom_components.philips_pureprotect.search.SEARCH_ROUNDS", 2)
+        monkeypatch.setattr("custom_components.philips_pureprotect.search.SEARCH_WAIT", 0.1)
+        monkeypatch.setattr("custom_components.philips_pureprotect.search.read_mac", lambda host: None)
+
+    async def _no_targets(hass: Any) -> list[str]:
+        return []
+
+    @pytest.fixture
+    def search_finds(monkeypatch: pytest.MonkeyPatch, fake: FakePurifier) -> FakePurifier:
+        """Let a search reach the simulated purifier, as a broadcast would reach the real one."""
+
+        async def loopback(hass: Any) -> list[str]:
+            return ["127.0.0.1"]
+
+        monkeypatch.setattr("custom_components.philips_pureprotect.search.async_search_targets", loopback)
+        return fake
 
     @pytest.fixture
     def hass_config_dir(hass_tmp_config_dir: str) -> str:

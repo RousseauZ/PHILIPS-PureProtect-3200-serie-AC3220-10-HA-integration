@@ -1,0 +1,44 @@
+# Makes a GitHub release whenever the version in the manifest goes up on main.
+# HACS offers each release as an update, with its version number.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [custom_components/philips_pureprotect/manifest.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version from the manifest
+        id: version
+        run: echo "version=$(jq -r .version custom_components/philips_pureprotect/manifest.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Take the release notes from the changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          awk -v v="$VERSION" '
+            index($0, "## " v) == 1 { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          test -s notes.md || echo "Zie CHANGELOG.md." > notes.md
+
+      - name: Create the release, unless it exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "Release v$VERSION exists already."
+            exit 0
+          fi
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --notes-file notes.md

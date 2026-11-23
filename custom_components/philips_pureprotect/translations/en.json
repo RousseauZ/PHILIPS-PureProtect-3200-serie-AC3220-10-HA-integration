@@ -1,8 +1,24 @@
 {
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
         "title": "Add a Philips PureProtect air purifier",
+        "description": "Home Assistant can look for the air purifier on your network, or you enter its address yourself.",
+        "menu_options": {
+          "search": "Search my network",
+          "manual": "Enter the address"
+        }
+      },
+      "search": {
+        "title": "Air purifiers found",
+        "description": "Choose the air purifier to add. Give it a fixed address in your router, so that it stays reachable.",
+        "data": {
+          "device": "Air purifier"
+        }
+      },
+      "manual": {
+        "title": "Enter the address",
         "description": "Enter the address of the air purifier on your network. You can find it in your router. Give the purifier a fixed address there, so that it stays reachable.",
         "data": {
           "host": "IP address or host name"
@@ -10,6 +26,10 @@
         "data_description": {
           "host": "For example 192.168.1.50."
         }
+      },
+      "discovery_confirm": {
+        "title": "Air purifier found",
+        "description": "{name} ({model}) was found on your network at {host}. Add it to Home Assistant?"
       },
       "reconfigure": {
         "title": "Change the address",
@@ -24,12 +44,15 @@
     },
     "error": {
       "cannot_connect": "Nothing answered at this address. Check the address, and that the purifier has power and is on your Wi-Fi network.",
-      "not_a_purifier": "Something answered at this address, but it is not a Philips air purifier. Check the address."
+      "not_a_purifier": "Something answered at this address, but it is not a Philips air purifier. Check the address.",
+      "no_devices_found": "No air purifier answered on your network. Check that it has power and is on your Wi-Fi, or enter its address. You can find it in your router."
     },
     "abort": {
       "already_configured": "This air purifier is already set up. Its address has been updated.",
       "reconfigure_successful": "The address has been changed.",
-      "wrong_device": "Another air purifier answers at this address. The address was not changed."
+      "wrong_device": "Another air purifier answers at this address. The address was not changed.",
+      "cannot_connect": "The device did not answer.",
+      "not_a_purifier": "The device that was found is not a Philips air purifier."
     }
   },
   "entity": {

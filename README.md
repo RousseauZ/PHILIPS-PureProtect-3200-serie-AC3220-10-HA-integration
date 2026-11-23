@@ -29,6 +29,7 @@ Lezen en bedienen zijn voor alle entiteiten op een echte AC3220/10 gemeten. Alle
 ## Hoe ze zich gedraagt
 
 - De luchtreiniger meldt alleen iets als er iets verandert, en in stand-by vrijwel niets. Stilte geldt daarom nooit als storing. Entiteiten worden pas "niet beschikbaar" als het apparaat ruim drie minuten op geen enkele controle antwoordt.
+- Krijgt de luchtreiniger een ander IP-adres, dan volgt de integratie dat. Via DHCP als Home Assistant het nieuwe adres ziet, en anders door hem zelf in het netwerk te zoeken als hij vijf minuten niet antwoordt op het oude adres. Een vaste reservering in je router blijft het betrouwbaarst.
 - Na een herstart van Home Assistant tonen de entiteiten de laatst ontvangen waarden. De sensor "Laatste status ontvangen" laat zien hoe oud die zijn.
 - Een luchtreiniger die uit staat, kan dat niet melden. Antwoordt hij na het opstarten wel op controles, maar komt er tien seconden lang geen status, dan gaat Home Assistant ervan uit dat hij uit staat. Het eerste statusbericht daarna toont de werkelijke toestand.
 - Zolang de luchtreiniger uit staat, meet hij niet. Fijnstof, allergenenindex, temperatuur en luchtvochtigheid zijn dan "onbekend" in plaats van de laatste waarde. Met de schakelaar "Sensoren in stand-by" aan toont Home Assistant ook dan wat het apparaat meldt; of het dan blijft meten, is nog niet op het apparaat gemeten. Die schakelaar kun je alleen omzetten terwijl de luchtreiniger aan staat.
@@ -70,9 +71,11 @@ Vooraf:
 
 **Of met de hand.** Kopieer de map `custom_components/philips_pureprotect` naar de map `custom_components` in de configuratiemap van Home Assistant, en herstart Home Assistant.
 
-Daarna: Instellingen → Apparaten en diensten → Integratie toevoegen → "Philips PureProtect", en vul het IP-adres in.
+Daarna: Instellingen → Apparaten en diensten → Integratie toevoegen → "Philips PureProtect". Kies **Zoeken in mijn netwerk**, of vul het adres zelf in. Vaak biedt Home Assistant de luchtreiniger ook vanzelf aan onder "Gevonden".
 
 Staat de luchtreiniger tijdens het toevoegen uit, dan toont de ventilator na ongeveer tien seconden "uit" en de ventilatorsnelheid 0. De overige waarden zijn onbekend tot je hem aanzet.
+
+Nieuwe versies staan in [CHANGELOG.md](CHANGELOG.md). Elke versie wordt een release op GitHub, en HACS biedt haar aan als update.
 
 ## Dashboardkaart
 
