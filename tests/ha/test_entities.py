@@ -43,6 +43,8 @@ UNIQUE_IDS = {
     "button.woonkamer_filter_cleaned": "filter_cleaned",
     "button.woonkamer_new_filter_fitted": "filter_replaced",
     "select.woonkamer_mode": "mode",
+    "sensor.woonkamer_cloud_connection": "cloud_connection",
+    "sensor.woonkamer_last_restart": "last_restart",
 }
 
 # entity: (device class, state class, unit, section of the device page)
@@ -75,6 +77,8 @@ DESCRIBED = {
     "button.woonkamer_filter_cleaned": (None, None, None, "config"),
     "button.woonkamer_new_filter_fitted": (None, None, None, "config"),
     "select.woonkamer_mode": (None, None, None, None),
+    "sensor.woonkamer_cloud_connection": (None, None, None, "diagnostic"),
+    "sensor.woonkamer_last_restart": ("timestamp", None, None, "diagnostic"),
 }
 
 # Diagnostic values that few people need: they exist, switched off.

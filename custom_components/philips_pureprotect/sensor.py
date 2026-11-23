@@ -45,6 +45,14 @@ def _raw(key: str) -> Callable[[PureProtectCoordinator], StateType]:
     return lambda coordinator: coordinator.value(key)
 
 
+def _text(key: str) -> Callable[[PureProtectCoordinator], StateType]:
+    def value(coordinator: PureProtectCoordinator) -> StateType:
+        found = coordinator.data.get(key)
+        return found if isinstance(found, str) else None
+
+    return value
+
+
 def _temperature(coordinator: PureProtectCoordinator) -> StateType:
     tenths = coordinator.value(Key.TEMPERATURE)
     return None if tenths is None else tenths / 10
@@ -146,6 +154,16 @@ SENSORS: tuple[PureProtectSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=_fan_speed,
     ),
+    # Whether the purifier talks to the Philips cloud, as its Wi-Fi module
+    # reports it. For an owner who cut it off from the internet, this shows
+    # that the block holds.
+    PureProtectSensorDescription(
+        key="cloud_connection",
+        translation_key="cloud_connection",
+        needs=(Key.CLOUD,),
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_text(Key.CLOUD),
+    ),
 )
 
 
@@ -160,6 +178,13 @@ async def async_setup_entry(
         async_add_entities,
         [TimerEndSensor],
         lambda _: (Key.TIMER_MINUTES_LEFT,),
+        lambda coordinator, cls: cls(coordinator),
+    )
+    add_when_reported(
+        entry,
+        async_add_entities,
+        [LastRestartSensor],
+        lambda _: (Key.RUNTIME,),
         lambda coordinator, cls: cls(coordinator),
     )
 
@@ -251,3 +276,26 @@ class TimerEndSensor(_SteadyTimestampSensor):
         if not minutes or received is None or not self.coordinator.value(Key.POWER):
             return None
         return received + timedelta(minutes=minutes)
+
+
+class LastRestartSensor(_SteadyTimestampSensor):
+    """When the purifier's Wi-Fi module last started, from its running time.
+
+    Moves only when the module restarts (or by more than a minute of drift),
+    so it fills no history. A module that keeps restarting, for instance
+    because it cannot reach its cloud, shows up here.
+    """
+
+    _attr_translation_key = "last_restart"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: PureProtectCoordinator) -> None:
+        """Create the sensor."""
+        super().__init__(coordinator, "last_restart")
+
+    def _moment(self) -> datetime | None:
+        runtime = self.coordinator.value(Key.RUNTIME)
+        received = moment(self.coordinator.session.last_frame_at)
+        if runtime is None or runtime < 0 or received is None:
+            return None
+        return received - timedelta(milliseconds=runtime)

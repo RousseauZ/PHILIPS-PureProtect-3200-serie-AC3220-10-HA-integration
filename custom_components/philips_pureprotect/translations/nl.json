@@ -66,6 +66,12 @@
       },
       "timer_end": {
         "name": "Timer loopt af"
+      },
+      "cloud_connection": {
+        "name": "Cloudverbinding"
+      },
+      "last_restart": {
+        "name": "Laatst opgestart"
       }
     },
     "binary_sensor": {

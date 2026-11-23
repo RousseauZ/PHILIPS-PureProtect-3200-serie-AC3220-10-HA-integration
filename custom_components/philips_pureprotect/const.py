@@ -29,6 +29,9 @@ class Key:
     MODEL = "D01S05"
     FIRMWARE = "D01S12"
     WIFI_FIRMWARE = "WifiVersion"
+    # The Wi-Fi module's own view of its link to the Philips cloud: "Online" as long as it has one.
+    CLOUD = "ConnectType"
+    RUNTIME = "Runtime"  # milliseconds since the Wi-Fi module started
     DEVICE_ID = "DeviceId"
     RSSI = "rssi"
 
@@ -63,7 +66,7 @@ class Key:
 # by itself.
 DEFAULT_KEYS: Final = frozenset(
     {
-        Key.NAME, Key.MODEL, Key.FIRMWARE, Key.DEVICE_ID, Key.RSSI,
+        Key.NAME, Key.MODEL, Key.FIRMWARE, Key.DEVICE_ID, Key.RSSI, Key.CLOUD, Key.RUNTIME,
         Key.POWER, Key.CHILD_LOCK, Key.BRIGHTNESS, Key.MODE, Key.FAN_LEVEL, Key.TIMER, Key.DISPLAY_OFF,
         Key.ALLERGY_SLEEP, Key.ALLERGEN_INDEX, Key.HUMIDITY, Key.BEEP, Key.STANDBY_SENSORS, Key.LIGHT_MODE,
         Key.LIGHT_SCENE, Key.AUTO_PLUS, Key.TIMER_MINUTES_LEFT, Key.PM25, Key.TEMPERATURE, Key.ERROR_CODE,
@@ -76,7 +79,7 @@ DEFAULT_KEYS: Final = frozenset(
 # readings, the running speed and the counters change by themselves all day
 # and can wait (SAVE_INTERVAL).
 SAVED_SOON: Final = (
-    Key.NAME, Key.MODEL, Key.FIRMWARE, Key.WIFI_FIRMWARE,
+    Key.NAME, Key.MODEL, Key.FIRMWARE, Key.WIFI_FIRMWARE, Key.CLOUD,
     Key.POWER, Key.MODE, Key.CHILD_LOCK, Key.BRIGHTNESS, Key.TIMER, Key.DISPLAY_OFF, Key.ALLERGY_SLEEP,
     Key.BEEP, Key.STANDBY_SENSORS, Key.LIGHT_MODE, Key.LIGHT_SCENE, Key.AUTO_PLUS,
 )  # fmt: skip

@@ -198,3 +198,27 @@ async def test_timer_end_stays_put_while_the_minutes_count_down(
     # A timer that is set again does move it.
     fake.change("D03211", 60)
     await until(hass, lambda: state(hass, TIMER_ENDS) not in (first, STATE_UNKNOWN))
+
+
+async def test_cloud_connection_shows_what_the_wifi_module_reports(hass: HomeAssistant, fake, setup) -> None:
+    await setup()
+    assert state(hass, "sensor.woonkamer_cloud_connection") == "Online"
+    # What the module reports without internet is not measured yet; whatever it says is shown.
+    fake.change("ConnectType", "Offline")
+    await until(hass, lambda: state(hass, "sensor.woonkamer_cloud_connection") == "Offline")
+
+
+async def test_last_restart_moves_only_when_the_module_restarts(hass: HomeAssistant, fake, setup) -> None:
+    await setup()
+    first = dt_util.parse_datetime(state(hass, "sensor.woonkamer_last_restart"))
+    # The simulator has been up for an hour.
+    assert first is not None and abs(first - (dt_util.utcnow() - timedelta(hours=1))) < timedelta(seconds=30)
+    for value in (20, 21, 22):
+        fake.change("D03221", value)
+        await until(hass, lambda value=value: state(hass, "sensor.woonkamer_pm2_5") == str(value))
+    assert dt_util.parse_datetime(state(hass, "sensor.woonkamer_last_restart")) == first
+    fake.reboot()
+    fake.change("D03221", 23)
+    await until(hass, lambda: dt_util.parse_datetime(state(hass, "sensor.woonkamer_last_restart")) != first)
+    again = dt_util.parse_datetime(state(hass, "sensor.woonkamer_last_restart"))
+    assert again is not None and abs(again - dt_util.utcnow()) < timedelta(seconds=30)

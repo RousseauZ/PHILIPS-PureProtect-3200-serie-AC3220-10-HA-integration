@@ -66,6 +66,12 @@
       },
       "timer_end": {
         "name": "Timer ends"
+      },
+      "cloud_connection": {
+        "name": "Cloud connection"
+      },
+      "last_restart": {
+        "name": "Last restart"
       }
     },
     "binary_sensor": {

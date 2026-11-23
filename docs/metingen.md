@@ -241,7 +241,22 @@ Eerste installatie op 23 november 2026 om 20:36.
 | Bediend vanuit Home Assistant | Licht naar sfeerlicht, Auto Plus aan, Allergie-slaap aan, ventilator uit en weer aan: elke keer gevolgd door de nieuwe toestand |
 | Ontbreekt | Het pictogram van de integratie ("logo not available") |
 
-### Eerste statusbericht na een nieuw abonnement, over alle metingen
+### Meting 18: DNS-verzoeken van de luchtreiniger
+
+Uit het querylogboek van AdGuard Home, gefilterd op 10.10.10.113. Alle verzoeken vielen op 22 november tussen 19:14:02 en 19:15:18; daarna geen enkel meer tot de schermafbeelding een dag later. In het logboek zijn de namen afgekapt; wat na "…" staat, is aangevuld.
+
+| Naam | Keer | Vermoedelijke rol |
+|---|---|---|
+| `a2gv4wmvb0sdt5-ats.iot.eu-c…` (`.iot.eu-central-1.amazonaws.com`) | 3 | MQTT-verbinding met AWS IoT in Frankfurt: de cloudverbinding van de app. Precies de naam uit het onderzoek |
+| `emm9z36om4.execute-api.eu-…` (`.amazonaws.com`) | 3 | Een REST-dienst op AWS API Gateway, vermoedelijk aanmelden of tijd |
+| `productionotaphilips.s3.amazo…` | 1 | Opslag van firmware-updates ("ota") |
+| `productionphilips.s3.amazona…` | 1 | Andere opslag van Philips op Amazon S3 |
+
+Gevolgen:
+- Na het opzoeken houdt het apparaat de verbinding open; daarom staat er sinds 22 november niets meer in het logboek. Een blokkade in DNS verbreekt een bestaande verbinding niet: daarna moet de stekker er even uit.
+- Er is geen verzoek naar een tijdserver te zien; de tijd komt vermoedelijk uit de cloud.
+
+
 
 | Toestand | Tijd tot het eerste bericht |
 |---|---|
@@ -319,6 +334,7 @@ Sleutels zonder bekende betekenis: `D03106`, `D0311F`, `D03136`, `D0313B`, `D031
 
 | Vraag | Opdracht |
 |---|---|
+| Blijft hij lokaal goed werken zonder internet: wat meldt `ConnectType`, herstart de wifi-module zich, blijft de bediening werken, en blijft de app thuis werken? | Internet blokkeren in de router, daarna een dag de sensoren "Cloudverbinding" en "Laatst opgestart" en de diagnostiek bekijken |
 | Blijft het apparaat meetwaarden sturen als het uit staat met "sensoren in stand-by" aan? De integratie toont ze dan; zonder deze schakelaar zijn ze "onbekend". | Zet "sensoren in stand-by" aan, zet het apparaat uit, en draai `watch --alles` een kwartier |
 | Welke controle blijft antwoorden gedurende uren stilte in stand-by? | `liveness` in stand-by, met "sensoren in stand-by" uit |
 | Waarom waren zes berichten in de nacht niet te lezen? | `python -m pureprotect_probe.inspect_run metingen/20261122-214359-liveness` opnieuw; de terugblik noemt nu de reden |
