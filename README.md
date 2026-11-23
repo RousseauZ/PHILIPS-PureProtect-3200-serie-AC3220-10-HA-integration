@@ -1,8 +1,12 @@
+![Philips PureProtect voor Home Assistant: lokaal bedienen, zonder cloud](https://raw.githubusercontent.com/RousseauZ/PHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration/main/docs/images/banner.png)
+
 # Philips PureProtect 3200 (AC3220/10) voor Home Assistant
 
 Een lokale Home Assistant-integratie voor de Philips PureProtect 3200-serie. Ze praat rechtstreeks met de luchtreiniger in je netwerk, zonder cloud en zonder account.
 
-**Stand: eerste proefversie (0.1.0).** De integratie is getest tegen een nagebootste luchtreiniger in Home Assistant 2026.11 en onafhankelijk nagelopen. Sinds 23 november 2026 draait ze op een echte AC3220/10 in Home Assistant 2026.11.2; de duurtest loopt. Het meetprogramma waarop het ontwerp steunt is wel op een echte AC3220/10 gedraaid.
+**Stand: eerste proefversie (0.1.0).** De integratie is getest tegen een nagebootste luchtreiniger in Home Assistant 2026.11 en onafhankelijk nagelopen. Sinds 23 november 2026 draait ze op een echte AC3220/10 in Home Assistant 2026.11.2; de duurtest loopt.
+
+Een onafhankelijk project, niet van Philips. "Philips" en "PureProtect" zijn merknamen van hun eigenaar en staan hier alleen om aan te geven voor welk apparaat de integratie is.
 
 ## Wat de integratie biedt
 
@@ -55,13 +59,30 @@ De Air+ app op je telefoon stuurt zelf ook gegevens naar Philips. Gebruik je de 
 
 Vereist: Home Assistant 2026.11 of nieuwer.
 
+Vooraf:
 1. Schakel een bestaande integratie voor deze luchtreiniger uit. Twee integraties vanaf hetzelfde adres nemen elkaars statusberichten af.
 2. Geef de luchtreiniger in je router een vast IP-adres.
-3. Kopieer de map `custom_components/philips_pureprotect` uit deze repository naar de map `custom_components` in de configuratiemap van Home Assistant.
-4. Herstart Home Assistant.
-5. Ga naar Instellingen, Apparaten en diensten, Integratie toevoegen, en kies "Philips PureProtect". Vul het IP-adres in.
+
+**Via HACS (aanbevolen).** Updates komen dan vanzelf als melding binnen.
+1. HACS → drie puntjes rechtsboven → Aangepaste repositories.
+2. Repository: `https://github.com/RousseauZ/PHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration`, type: Integratie → Toevoegen.
+3. Zoek "Philips PureProtect" → Downloaden, en herstart Home Assistant.
+
+**Of met de hand.** Kopieer de map `custom_components/philips_pureprotect` naar de map `custom_components` in de configuratiemap van Home Assistant, en herstart Home Assistant.
+
+Daarna: Instellingen → Apparaten en diensten → Integratie toevoegen → "Philips PureProtect", en vul het IP-adres in.
 
 Staat de luchtreiniger tijdens het toevoegen uit, dan toont de ventilator na ongeveer tien seconden "uit" en de ventilatorsnelheid 0. De overige waarden zijn onbekend tot je hem aanzet.
+
+## Dashboardkaart
+
+Een kant-en-klare kaart met de bediening, de luchtkwaliteit met een grafiek van 24 uur, het licht, kinderslot, timer en filter. Ze gebruikt alleen kaarten die in Home Assistant zijn ingebouwd.
+
+1. Open een dashboard en kies Bewerken → Kaart toevoegen → Handmatig.
+2. Plak de inhoud van [`docs/dashboard.yaml`](docs/dashboard.yaml).
+3. Heet je luchtreiniger niet "Woonkamer", vervang dan overal `woonkamer` door de naam in de entiteits-id's van jouw apparaat.
+
+De knop "Filter reinigen" vraagt eerst om bevestiging, zodat je de teller niet per ongeluk terugzet.
 
 ## Documentatie
 

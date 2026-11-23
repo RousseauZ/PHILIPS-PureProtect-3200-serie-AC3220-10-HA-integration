@@ -39,7 +39,10 @@
         "default": "mdi:timer-outline"
       },
       "cloud_connection": {
-        "default": "mdi:cloud-outline"
+        "default": "mdi:cloud-off-outline",
+        "state": {
+          "Online": "mdi:cloud-check-outline"
+        }
       },
       "last_restart": {
         "default": "mdi:restart"
@@ -55,7 +58,7 @@
     },
     "button": {
       "filter_cleaned": {
-        "default": "mdi:air-filter"
+        "default": "mdi:broom"
       },
       "filter_replaced": {
         "default": "mdi:air-filter"
@@ -75,10 +78,13 @@
         }
       },
       "auto_plus": {
-        "default": "mdi:fan-plus"
+        "default": "mdi:creation"
       },
       "allergy_sleep": {
-        "default": "mdi:sleep"
+        "default": "mdi:sleep",
+        "state": {
+          "off": "mdi:sleep-off"
+        }
       },
       "standby_sensors": {
         "default": "mdi:radar"
@@ -97,20 +103,35 @@
           "off": "mdi:fan-off",
           "auto": "mdi:fan-auto",
           "sleep": "mdi:power-sleep",
-          "turbo": "mdi:fan-plus"
+          "medium": "mdi:fan-speed-2",
+          "turbo": "mdi:fan-chevron-up"
         }
       },
       "light_mode": {
-        "default": "mdi:lightbulb-outline"
+        "default": "mdi:lightbulb-outline",
+        "state": {
+          "off": "mdi:lightbulb-off-outline",
+          "air_quality": "mdi:lightbulb-on-outline",
+          "ambient": "mdi:lightbulb-night-outline"
+        }
       },
       "light_brightness": {
-        "default": "mdi:brightness-6"
+        "default": "mdi:brightness-6",
+        "state": {
+          "auto": "mdi:brightness-auto",
+          "low": "mdi:brightness-5",
+          "bright": "mdi:brightness-7",
+          "off": "mdi:lightbulb-off-outline"
+        }
       },
       "light_scene": {
         "default": "mdi:palette"
       },
       "timer": {
-        "default": "mdi:timer-outline"
+        "default": "mdi:timer-outline",
+        "state": {
+          "off": "mdi:timer-off-outline"
+        }
       }
     }
   }

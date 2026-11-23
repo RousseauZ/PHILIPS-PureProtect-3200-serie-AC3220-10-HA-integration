@@ -1,0 +1,111 @@
+# Dashboardkaart voor de Philips PureProtect-integratie.
+#
+# Toevoegen: open een dashboard, kies Bewerken → Kaart toevoegen → Handmatig,
+# en plak alles hieronder. Heet je luchtreiniger niet "Woonkamer", vervang dan
+# overal "woonkamer" door de naam die in de entiteits-id's van jouw apparaat
+# staat (Instellingen → Apparaten en diensten → Philips PureProtect → je apparaat).
+#
+# Alleen kaarten en functies die in Home Assistant 2026.11 zijn ingebouwd; er
+# is niets extra's voor nodig.
+type: vertical-stack
+title: Luchtreiniger
+cards:
+  - type: tile
+    entity: fan.woonkamer
+    name: Woonkamer
+    vertical: false
+    features:
+      - type: fan-preset-modes
+        style: icons
+        preset_modes:
+          - auto
+          - sleep
+  - type: tile
+    entity: select.woonkamer_stand
+    name: Stand
+    features:
+      - type: select-options
+        style: dropdown
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: tile
+        entity: sensor.woonkamer_pm2_5
+        name: PM2.5
+        features:
+          - type: trend-graph
+            hours_to_show: 24
+      - type: tile
+        entity: sensor.woonkamer_allergenenindex
+        name: Allergenenindex
+        features:
+          - type: trend-graph
+            hours_to_show: 24
+      - type: tile
+        entity: sensor.woonkamer_temperatuur
+        name: Temperatuur
+        features:
+          - type: trend-graph
+            hours_to_show: 24
+      - type: tile
+        entity: sensor.woonkamer_luchtvochtigheid
+        name: Luchtvochtigheid
+        features:
+          - type: trend-graph
+            hours_to_show: 24
+  - type: tile
+    entity: select.woonkamer_licht
+    name: Licht
+    features:
+      - type: select-options
+        style: buttons
+        options:
+          - "off"
+          - air_quality
+          - ambient
+  - type: tile
+    entity: select.woonkamer_helderheid_licht
+    name: Helderheid
+    features:
+      - type: select-options
+        style: buttons
+        options:
+          - auto
+          - low
+          - bright
+          - "off"
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: tile
+        entity: switch.woonkamer_kinderslot
+        name: Kinderslot
+        features:
+          - type: toggle
+      - type: tile
+        entity: select.woonkamer_timer
+        name: Timer
+        features:
+          - type: select-options
+            style: dropdown
+      - type: tile
+        entity: sensor.woonkamer_resterende_levensduur_filter
+        name: Filter
+        features:
+          - type: bar-gauge
+            min: 0
+            max: 100
+      - type: tile
+        entity: sensor.woonkamer_filter_reinigen_over
+        name: Filter reinigen
+        tap_action:
+          action: perform-action
+          perform_action: button.press
+          target:
+            entity_id: button.woonkamer_filter_gereinigd
+          confirmation:
+            text: Is het voorfilter gereinigd? Dan zet dit de teller terug.
+        icon_tap_action:
+          action: more-info
