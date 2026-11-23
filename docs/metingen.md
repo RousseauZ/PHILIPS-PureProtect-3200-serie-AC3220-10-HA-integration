@@ -160,7 +160,7 @@ Een ander apparaat in het netwerk, een LG-televisie, antwoordde ook op de broadc
 
 ### Meting 12: `liveness`, acht uur in de nacht
 
-Bedoeld als meting van stilte in stand-by, maar het apparaat meldde de hele nacht door. Het stond dus aan, of in stand-by met "sensoren in stand-by" aan; welke van de twee, blijkt uit de terugblik (zie onder).
+Bedoeld als meting van stilte in stand-by, maar het apparaat stond aan: de terugblik toont aan/uit 1, handmatige snelheid 1 en "sensoren in stand-by" uit, de hele nacht ongewijzigd. Stilte in stand-by is dus nog niet gemeten.
 
 | Onderwerp | Uitkomst |
 |---|---|
@@ -169,7 +169,10 @@ Bedoeld als meting van stilte in stand-by, maar het apparaat meldde de hele nach
 | CoAP-ping | 960 van 960 beantwoord, mediaan 126 ms, traagste 449 ms |
 | Statusberichten | 8859 in acht uur, gemiddeld één per 3,3 s; langste periode zonder wijziging 85 s |
 | Berichten die alleen de bekende status herhaalden | 10 van de 8859 |
-| Vernieuwen met hetzelfde kenmerk, elke minuut | Ongeveer 480 keer verstuurd. Het abonnement bleef acht uur leveren. Hooguit 10 van die 480 kunnen met een herhaling van de status zijn beantwoord |
+| Vernieuwen met hetzelfde kenmerk, elke minuut | 480 keer verstuurd; het abonnement bleef acht uur leveren. Binnen 3 s volgde 261 keer een bericht, nooit een herhaling van de status. Op 479 momenten zonder aanvraag: 264 keer een bericht, 4 keer een herhaling. **Niet beantwoord.** |
+| Wat de berichten veroorzaakte | De temperatuur (`D03224`) veranderde 8534 keer, gemiddeld elke 3 s: ze springt heen en weer tussen twee tienden van een graad. Fijnstof 247 keer, vochtigheid 164 keer, allergenenindex 26 keer |
+| Tijd tussen statusberichten | Mediaan 1,3 s, 95% binnen 11,2 s, langste 85 s |
+| Eerste aanvraag | Binnen 3 s geen leesbaar bericht. Zes berichten in de nacht waren niet te lezen; waarom, toont de terugblik sinds 23 november |
 | Sync-teller | Bij elke sync een andere, niet oplopende waarde |
 
 Terugkijken op een afgeronde meting kan zonder opnieuw te meten:
@@ -180,14 +183,62 @@ python -m pureprotect_probe.inspect_run metingen/20261122-214359-liveness
 
 Dat toont of het apparaat aan stond, welke waarden hoe vaak veranderden en wat er op elke vernieuwing volgde.
 
+### Meting 13: `refresh`, apparaat aan
+
+Per soort zes vensters van 3 s, elk begonnen na 4 s stilte.
+
+| Soort | Vensters met een bericht | Waarvan een herhaling van de bekende status |
+|---|---|---|
+| Zonder aanvraag (vergelijking) | 1 van 6 | 0 |
+| Vernieuwen met hetzelfde kenmerk | 4 van 6 | 1 |
+| Nieuw kenmerk vanaf dezelfde poort | 0 van 6 | 0 |
+
+- Eerste abonnement: beantwoord na 2,1 s.
+- Een nieuw kenmerk vanaf dezelfde poort wordt **niet beantwoord**, maar neemt de stroom wel over: op de vervangen kenmerken kwam daarna niets meer.
+- Het programma noemde vernieuwen met hetzelfde kenmerk "beantwoord", op zes vensters en precies op de drempel. De acht uur van meting 12 (480 keer, geen enkele herhaling) wegen zwaarder: **niet beantwoord**.
+
+### Meting 14: `write-matrix`, apparaat aan
+
+Alle gewijzigde instellingen zijn daarna teruggezet en bevestigd.
+
+| Onderwerp | Uitkomst |
+|---|---|
+| Aan en uit, standen, snelheden 1 tot 5 | Alles teruggemeld, meestal na 0,2 tot 0,6 s. Eén keer 4,7 s: slaapstand, met `StatusType` `status` |
+| Lampfunctie, helderheid, scène, display, alleen en in de combinaties van de app | Alles teruggemeld, na 0,1 tot 0,6 s |
+| Kinderslot, pieptoon, Auto+, Allergie-slaap, sensoren in stand-by | Alles teruggemeld |
+| Timer (1 uur en weer uit) | Teruggemeld |
+| Drempel voor meldingen `D0312C` | Teruggemeld (na 0,5 en 1,2 s, `StatusType` `status`) |
+| Weergegeven index `D0312A` | `success`, maar **genegeerd**: de status bleef 1 |
+| Filtertellers `D0520D` en `D0540E`, één uur lager en terug | Beide richtingen teruggemeld: beide tellers zijn lokaal te schrijven |
+| Aanzetten met een stand in één opdracht | Beide toegepast, teruggemeld na 0,26 s |
+| Een instelling direct na het antwoord op aanzetten | Toegepast, teruggemeld na 0,22 s |
+| Een opdracht met de waarde die al gold | Toch een statusbericht, na 0,03 en 1,25 s |
+| Werkelijk toerental bij de terugmelding | Loopt één bericht achter op de stand: medium 3, turbo 18, snelheid 1 tot 4 toerental 1 tot 4, zoals eerder gemeten |
+
+### Meting 15: de verbindingslaag van de integratie, apparaat aan
+
+`tools/session_check.py`, drie minuten.
+
+| Onderwerp | Uitkomst |
+|---|---|
+| Bereikbaar | Direct |
+| Eerste status | Na 1,0 s, 58 sleutels |
+| Kinderslot aan en weer uit | Beide bevestigd na 0,24 en 0,29 s, in één poging |
+| Daarna | 57 statusberichten in drie minuten, geen gemiste controle, geen weggegooid bericht, geen nieuwe socket |
+
+### Meting 16: CoAP-ping naar de LG-televisie
+
+0 van 10 beantwoord. De televisie antwoordt wel op een info-aanvraag via broadcast (meting 11), maar niet op een ping.
+
 ### Eerste statusbericht na een nieuw abonnement, over alle metingen
 
 | Toestand | Tijd tot het eerste bericht |
 |---|---|
-| Aan (zes metingen) | 0,2 s, 0,8 s, 1,2 s, 1,4 s, 1,9 s en 1,9 s |
+| Aan (acht metingen) | 0,2 s, 0,8 s, 1,0 s, 1,2 s, 1,4 s, 1,9 s, 1,9 s en 2,1 s |
+| Aan, meting 12 | Binnen 3 s geen leesbaar bericht; het apparaat meldde zich daarna elke paar seconden |
 | Stand-by (twee metingen) | Geen bericht in 70 s; geen bericht tot het apparaat werd aangezet |
 
-Zes keer binnen twee seconden is geen toeval: met het apparaat aan beantwoordt het een nieuw abonnement vanaf een nieuwe poort binnen ongeveer twee seconden. In stand-by niet.
+Met het apparaat aan beantwoordt het een abonnement vanaf een nieuwe poort vrijwel altijd binnen ongeveer twee seconden. In stand-by niet.
 
 ## Wat dit vastlegt
 
@@ -207,40 +258,47 @@ Zes keer binnen twee seconden is geen toeval: met het apparaat aan beantwoordt h
 | Een nieuw kenmerk vervangt het oude direct | Overstappen op een nieuw kenmerk kan zonder overgangsperiode |
 | Afmelden en een reset worden genegeerd | Bij het stoppen valt er niets af te melden. Het apparaat blijft naar de laatste abonnee sturen tot een nieuwe zich meldt; dat is onschadelijk. |
 | Clients vanaf hetzelfde adres delen één teller; de laatste sync telt | Bevestigt: sync direct vóór elk commando, onder één slot. Een sync als bereikbaarheidscontrole kan de teller van een andere client ongeldig maken; de ping heeft dat nadeel niet. |
-| Met het apparaat aan beantwoordt het een nieuw abonnement binnen ongeveer 2 s; een vernieuwing met hetzelfde kenmerk niet (meting 12: hooguit 10 herhalingen op ongeveer 480 vernieuwingen) | Bij het opstarten van Home Assistant komt de status vanzelf binnen als het apparaat aan staat. Vernieuwen met hetzelfde kenmerk is alleen een vangnet en levert zelf geen status op. |
+| Met het apparaat aan beantwoordt het een abonnement vanaf een nieuwe poort binnen ongeveer 2 s; een vernieuwing met hetzelfde kenmerk niet (meting 12) en een nieuw kenmerk vanaf dezelfde poort ook niet (meting 13) | Bij het opstarten van Home Assistant komt de status vanzelf binnen als het apparaat aan staat. Daarna levert geen enkele vorm van opnieuw abonneren een verse status; dat hoeft ook niet, want een draaiend apparaat meldt zich binnen seconden en elk bericht bevat de hele status. |
 | De info-aanvraag wordt vaak niet beantwoord, zeker bij meerdere tegelijk (7 van 15) | Herkenning vraagt drie tot vijf pogingen, één tegelijk, met een seconde ertussen |
 | Het apparaat is vindbaar via broadcast, niet via multicast; een ander apparaat in het netwerk antwoordt ook op poort 5683 | Automatisch zoeken via broadcast met herhalingen. Elk antwoord streng controleren op `device_id`, `product_id` en een bekend model. |
 | Drie soorten controles bleven acht uur lang elke keer antwoorden (2880 van 2880), met het apparaat actief | De regel voor "onbereikbaar" (drie missers, drie minuten stilte en een tweede soort controle die ook faalt) heeft ruime marge. Voor uren stilte in stand-by is dit nog niet gemeten |
 | De info-aanvraag antwoordt betrouwbaar als ze alleen wordt gesteld, maar traag (tot 1,3 s) | De identiteitscontrole wacht 2 s en vraagt nooit twee keer tegelijk |
-| Een actief apparaat stuurt gemiddeld elke 3,3 s een statusbericht | Home Assistant mag niet bij elk bericht naar schijf schrijven, en een tijdstip-sensor mag niet elk bericht volgen |
+| Een actief apparaat stuurt gemiddeld elke 3,3 s een statusbericht, vooral omdat de temperatuur heen en weer springt | Home Assistant mag niet bij elk bericht naar schijf schrijven, en een tijdstip-sensor mag niet elk bericht volgen. De temperatuursensor schrijft ongeveer 25.000 regels per dag in de geschiedenis |
+| Elke instelling die de integratie gebruikt, is vanaf het netwerk te bedienen, ook helderheid, scène, display en de filtertellers (meting 14) | Anders dan bij verwante modellen. Het licht wordt geschreven zoals de app dat doet, en er is een knop "Filter gereinigd" |
+| De weergegeven index `D0312A` wordt genegeerd | Geen entiteit voor |
+| Aanzetten en een stand in één opdracht worden allebei toegepast | De ventilator stuurt ze samen: sneller, en zonder dat het apparaat even in de vorige stand draait |
+| Een terugmelding duurde één keer 4,7 s | De deadline van 5 s is krap. Een draaiend apparaat meldt zich intussen meestal toch, en anders stuurt de integratie de opdracht één keer opnieuw; een opdracht met de waarde die al geldt, geeft met het apparaat aan altijd een statusbericht |
+| De verbindingslaag van de integratie werkt tegen het echte apparaat (meting 15) | Eerste echte bevestiging buiten de nabootsing |
+| De televisie antwoordt niet op een ping | Staat de televisie ooit op het adres van de luchtreiniger, dan gaat de integratie na drie minuten naar "onbereikbaar" in plaats van "bereikbaar" te blijven |
 
 
 ## Functiedekking
 
 Doel: elke functie die het apparaat lokaal prijsgeeft, is beschikbaar in de integratie. Deze tabel houdt bij hoe ver dat is aangetoond op het echte apparaat.
 
-| Functie | Sleutel | Lezen | Bedienen |
-|---|---|---|---|
-| Aan en uit | `D03102` | Gemeten | Gemeten |
-| Kinderslot | `D03103` | Gemeten | Gemeten (alleen met het apparaat aan) |
-| Standen auto, slaap, medium, turbo | `D0310C` | Gemeten | Nog te meten |
-| Handmatige snelheden 1 tot 5 | `D0310C` | Gemeten | Nog te meten |
-| Werkelijk toerental | `D0310D` | Gemeten | Alleen-lezen |
-| Allergie-slaap | `D03115` | Gemeten | Nog te meten |
-| Auto+ | `D03180` | Gemeten | Nog te meten |
-| Fijnstof, allergenenindex, temperatuur, vochtigheid | `D03221`, `D03120`, `D03224`, `D03125` | Gemeten | Alleen-lezen |
-| Filter: resterende levensduur en reiniging | `D0540E`, `D05408`, `D0520D`, `D05207` | Gemeten | De app zet de reinigingsteller terug naar de beginwaarde (gezien: 719 naar 720); of dat lokaal te schrijven is, is nog te meten |
-| Pieptoon | `D03130` | Gemeten | Nog te meten |
-| Timer | `D03110`, `D03211` | Gemeten | Nog te meten |
-| Sensoren in stand-by | `D03134` | Gemeten | Nog te meten |
-| Weergegeven index op het display | `D0312A` | In de status; niet als instelling in de app gezien | Nog te meten |
-| Drempel voor meldingen | `D0312C` | In de status; meldingen wijzigen in de app veranderde de waarde niet | Nog te meten |
-| Helderheid van het licht, ook van het sfeerlicht | `D03105` | Gemeten | Nog te meten; op verwante modellen alleen-lezen. De app schrijft "uit" samen met lampfunctie uit |
-| Display aan of uit | `D03112` (0 aan, 1 uit) | Gemeten | Nog te meten |
-| Lampfunctie van de lichtring | `D03135` | Gemeten | Nog te meten |
-| Lichtscène | `D03137` | Gemeten | Nog te meten; op verwante modellen niet schrijfbaar. De app schrijft een scène samen met helderheid en lampfunctie |
-| Storing of foutcode | `D03240` | In de status | Alleen-lezen |
-| Wifi-signaal, firmwareversies, looptijd | `rssi`, `D01S12`, `WifiVersion`, `Runtime` | Gemeten | Alleen-lezen |
+| Functie | Sleutel | Lezen | Bedienen | In de integratie |
+|---|---|---|---|---|
+| Aan en uit | `D03102` | Gemeten | Gemeten | Ventilator |
+| Standen auto, slaap, medium, turbo | `D0310C` | Gemeten | Gemeten | Ventilator: auto en slaap als stand, medium en turbo als 60% en 100% |
+| Handmatige snelheden 1 tot 5 | `D0310C` | Gemeten | Gemeten | Ventilator |
+| Werkelijk toerental | `D0310D` | Gemeten | Alleen-lezen | Sensor "Ventilatorsnelheid" |
+| Kinderslot | `D03103` | Gemeten | Gemeten (alleen met het apparaat aan) | Schakelaar |
+| Allergie-slaap | `D03115` | Gemeten | Gemeten | Schakelaar |
+| Auto+ | `D03180` | Gemeten | Gemeten | Schakelaar |
+| Pieptoon | `D03130` | Gemeten | Gemeten | Schakelaar |
+| Sensoren in stand-by | `D03134` | Gemeten | Gemeten | Schakelaar |
+| Display aan of uit | `D03112` (0 aan, 1 uit) | Gemeten | Gemeten | Schakelaar |
+| Lampfunctie van de lichtring | `D03135` | Gemeten | Gemeten | Keuzelijst "Licht" |
+| Helderheid van het licht, ook van het sfeerlicht | `D03105` | Gemeten | Gemeten | Keuzelijst "Helderheid licht" |
+| Lichtscène | `D03137` | Gemeten | Gemeten | Keuzelijst "Scène sfeerlicht" |
+| Timer | `D03110`, `D03211` | Gemeten | Gemeten | Keuzelijst en sensor "Timer loopt af" |
+| Fijnstof, allergenenindex, temperatuur, vochtigheid | `D03221`, `D03120`, `D03224`, `D03125` | Gemeten | Alleen-lezen | Sensoren |
+| Filter: resterende levensduur | `D0540E`, `D05408` | Gemeten | Gemeten (schrijfbaar) | Sensor en waarschuwing. Geen knop: in de app niet gezien. Omdat de teller schrijfbaar is, kan er een knop bij als je die wilt |
+| Filter: reinigen | `D0520D`, `D05207` | Gemeten | Gemeten (schrijfbaar) | Sensor, waarschuwing en knop "Filter gereinigd", zoals in de app |
+| Weergegeven index op het display | `D0312A` | In de status | Genegeerd | Geen |
+| Drempel voor meldingen | `D0312C` | In de status | Gemeten | Geen: meldingen lopen via de cloud |
+| Storing of foutcode | `D03240` | In de status; nog geen storing gezien | Alleen-lezen | Waarschuwing en sensor |
+| Wifi-signaal, firmwareversies, looptijd | `rssi`, `D01S12`, `WifiVersion`, `Runtime` | Gemeten | Alleen-lezen | Sensor en apparaatgegevens |
 
 Niet lokaal beschikbaar: het weekschema en de instellingen voor meldingen (gemeten: wijzigen in de app verandert lokaal niets), en voor zover bekend ook de luchtkwaliteit buiten, grafieken en firmware-updates. Die lopen via de app en de cloud. Home Assistant heeft daar eigen middelen voor (automatiseringen, geschiedenis, een weerdienst).
 
@@ -250,14 +308,10 @@ Sleutels zonder bekende betekenis: `D03106`, `D0311F`, `D03136`, `D0313B`, `D031
 
 | Vraag | Opdracht |
 |---|---|
-| Wordt opnieuw abonneren beantwoord, met hetzelfde kenmerk en met een nieuw kenmerk vanaf dezelfde poort? De protocollaag gebruikt een nieuw kenmerk om na een gemist bericht de status op te halen, en leunt dus op een "ja" voor het nieuwe kenmerk. | `refresh`, apparaat aan |
-| Welke schrijfopdrachten werken, ook de combinaties die de app voor het licht gebruikt? | `write-matrix` |
-| Werkt de verbindingslaag van de integratie tegen het echte apparaat: status binnen, een schrijfopdracht bevestigd, geen gemiste controles? | `python ../session_check.py <ip> --set D03103=1 --set D03103=0`, vanuit `tools/probe`, apparaat aan |
-| Neemt het apparaat een stand aan die samen met aanzetten in één opdracht staat, en een instelling die direct achter het aanzetten aan komt? | `write-matrix`, groep `combinatie` |
-| Zijn de filtertellers lokaal te schrijven? | `write-matrix`, groep `filter` |
-| Welke controle blijft antwoorden gedurende uren stilte? | `liveness` in stand-by |
-| Blijft een abonnement ook leveren na lange stilte in stand-by? | `lapse` in stand-by, met de aan/uit-knop als verandering |
-| Antwoordt de LG-televisie ook op een CoAP-ping? Dan is "er antwoordt iets op dit adres" geen bewijs dat het de luchtreiniger is. | `ping --host 10.10.10.68` |
+| Blijft het apparaat meetwaarden sturen als het uit staat met "sensoren in stand-by" aan? De integratie toont ze dan; zonder deze schakelaar zijn ze "onbekend". | Zet "sensoren in stand-by" aan, zet het apparaat uit, en draai `watch --alles` een kwartier |
+| Welke controle blijft antwoorden gedurende uren stilte in stand-by? | `liveness` in stand-by, met "sensoren in stand-by" uit |
+| Waarom waren zes berichten in de nacht niet te lezen? | `python -m pureprotect_probe.inspect_run metingen/20261122-214359-liveness` opnieuw; de terugblik noemt nu de reden |
 | Bedient het apparaat abonnees vanaf verschillende adressen tegelijk? | `observe` op twee computers tegelijk |
 | Gedrag na een stroomonderbreking | `power-cycle` |
 | Storen de app en een lokale client elkaar? | Tijdens de rondgang niet; `app` test daarnaast of onze controles de app hinderen |
+| De betekenis van `D0311F` | Werd in meting 15 even 0 en weer 1, zonder dat er iets werd bediend |

@@ -150,7 +150,7 @@ def test_stop_ends_a_write_that_waits_for_its_confirmation(bench: Bench) -> None
         fake = bench.fake
         fake.push_on_same_value = False  # no frame at all after the discarded write
         session = await bench.live(options=bench.options(bench.quiet, confirm_timeout=30.0))
-        writing = asyncio.ensure_future(session.write({"D03105": 0}))  # will never be confirmed
+        writing = asyncio.ensure_future(session.write({"D0312A": 0}))  # will never be confirmed
         await bench.until(lambda: len(fake.controls) == 1)
         await asyncio.sleep(0.05)
         assert not writing.done()

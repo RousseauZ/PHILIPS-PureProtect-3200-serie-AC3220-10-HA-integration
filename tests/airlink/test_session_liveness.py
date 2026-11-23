@@ -306,6 +306,33 @@ def test_change_missed_during_a_short_outage_is_fetched_on_the_first_contact(ben
         assert new != token and list(fake.observers) == [(client, new)]
         assert session.diagnostics().socket_recreations == 0
 
+    # Firmware that answers a new token from the port it already serves; the
+    # AC3220/10 does not (measurement 13).
+    bench.run(body, answer_new_token_on_same_port=True)
+
+
+def test_change_missed_during_a_short_outage_arrives_with_the_next_report_on_the_measured_device(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.options(offline_min_silence=30.0))
+        await bench.settled()
+        client, token = fake.registrations[-1]
+        fake.silent = True
+        await bench.until(lambda: session.state is SUSPECT)
+        fake.drop_next_notifications = 1
+        fake.change("D03221", 77)
+        fake.silent = False
+        # The registration with a new token on the first contact is not
+        # answered by the AC3220/10 (measurement 13), but it takes the stream
+        # over; the next report carries the whole status.
+        await bench.until(lambda: fake.registrations[-1][1] != token, "no registration with a new token")
+        fake.change("D03125", 52)
+        await bench.until(
+            lambda: session.status is not None and (session.status["D03221"], session.status["D03125"]) == (77, 52),
+            "the next report did not reach the session",
+        )
+        assert session.state is LIVE and list(fake.observers) == [(client, fake.registrations[-1][1])]
+
     bench.run(body)
 
 

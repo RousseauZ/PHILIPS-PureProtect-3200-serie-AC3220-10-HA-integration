@@ -84,67 +84,52 @@ async def test_a_scene_can_switch_on_and_change_a_setting_in_any_order(
 
 
 async def test_what_the_light_selects_send(hass: HomeAssistant, fake, setup) -> None:
-    # Whether the AC3220 takes brightness and scene from the network is still to be
-    # measured; this test is about what is sent, on a device that takes them.
-    fake.readonly_keys = set()
+    # The AC3220/10 takes brightness, lamp function and scene from the network,
+    # alone and together (docs/metingen.md, measurement 14).
     await setup()
     last: Any = lambda: fake.controls[-1]
 
-    # Off is the lamp function alone, so that it is confirmed on a key that related models do take.
+    # Off is what the Air+ app sends: brightness 0 and lamp function 0 (measurements 6, 7 and 14).
     await select(hass, "light", "off")
-    assert last() == {"D03135": 0}
+    assert last() == {"D03135": 0, "D03105": 0}
     assert state(hass, "select.woonkamer_light") == "off"
-    assert state(hass, "select.woonkamer_light_brightness") == "auto"  # left as it was
+    assert state(hass, "select.woonkamer_light_brightness") == "off"
 
-    # Back on is the lamp function alone as well, while there is a brightness.
+    # Coming back from that needs a brightness again, or the light would stay dark.
     await select(hass, "light", "air_quality")
-    assert last() == {"D03135": 1}
+    assert last() == {"D03135": 1, "D03105": 101}
+    assert state(hass, "select.woonkamer_light_brightness") == "auto"
+    # While there is a brightness, the lamp function travels alone.
     await select(hass, "light", "ambient")
     assert last() == {"D03135": 2}
 
     await select(hass, "light_brightness", "low")
     assert last() == {"D03105": 115} and state(hass, "select.woonkamer_light_brightness") == "low"
 
-    # The Air+ app switches the light off with brightness 0 as well (measurements 6 and 7).
-    fake.change("D03105", 0)
-    fake.change("D03135", 0)
-    await until(hass, lambda: state(hass, "select.woonkamer_light") == "off")
-    # Brightness 0 has no name of its own: the light is off.
-    assert state(hass, "select.woonkamer_light_brightness") == "unknown"
-    # Coming back from that needs a brightness again, or the light would stay dark.
-    await select(hass, "light", "air_quality")
-    assert last() == {"D03135": 1, "D03105": 101}
-    assert state(hass, "select.woonkamer_light_brightness") == "auto"
+    # Brightness off is light off, as in the app; a brightness switches the light on again.
+    await select(hass, "light_brightness", "off")
+    assert last() == {"D03105": 0, "D03135": 0} and state(hass, "select.woonkamer_light") == "off"
+    await select(hass, "light_brightness", "bright")
+    assert last() == {"D03105": 123, "D03135": 1}
+    assert state(hass, "select.woonkamer_light") == "air_quality"
 
-    # A scene is chosen the way the app does: with the ambient light on, at automatic brightness.
-    await select(hass, "light_brightness", "low")
+    # A scene is a colour of the ambient light: it switches that on and keeps the brightness.
     await select(hass, "ambient_light_scene", "scene_2")
-    assert last() == {"D03137": 2, "D03105": 101, "D03135": 2}
+    assert last() == {"D03137": 2, "D03135": 2}
     assert state(hass, "select.woonkamer_ambient_light_scene") == "scene_2"
-    assert state(hass, "select.woonkamer_light_brightness") == "auto"
+    assert state(hass, "select.woonkamer_light_brightness") == "bright"
     assert state(hass, "select.woonkamer_light") == "ambient"
-
-
-async def test_light_off_succeeds_on_a_device_that_does_not_take_a_brightness(hass: HomeAssistant, fake, setup) -> None:
-    # What the nearest relative was seen to do (docs/onderzoek.md, appendix A: D03105 is read-only on an
-    # AC4220/12, where D03135 does work): a brightness is answered "success" and discarded.
-    fake.readonly_keys = {"D03105"}
-    await setup()
-    assert state(hass, "select.woonkamer_light") == "ambient"
-
+    # From a dark light it brings the brightness of the app along.
     await select(hass, "light", "off")
-
-    assert fake.state["D03135"] == 0 and state(hass, "select.woonkamer_light") == "off"
-    await select(hass, "light", "air_quality")
-    assert fake.state["D03135"] == 1 and state(hass, "select.woonkamer_light") == "air_quality"
+    await select(hass, "ambient_light_scene", "scene_3")
+    assert last() == {"D03137": 3, "D03135": 2, "D03105": 101}
 
 
 async def test_every_choice_is_written_as_the_value_of_the_device(hass: HomeAssistant, fake, setup) -> None:
-    fake.readonly_keys = set()  # a device that takes brightness and scene from the network
     await setup()
     expected = {
         "light": ("D03135", {"off": 0, "air_quality": 1, "ambient": 2}),
-        "light_brightness": ("D03105", {"auto": 101, "low": 115, "bright": 123}),
+        "light_brightness": ("D03105", {"auto": 101, "low": 115, "bright": 123, "off": 0}),
         "ambient_light_scene": ("D03137", {"scene_1": 1, "scene_2": 2, "scene_3": 3, "scene_4": 4}),
         "timer": ("D03110", {"off": 0} | {f"hours_{hours}": hours + 1 for hours in range(1, 13)}),
     }
@@ -174,7 +159,7 @@ async def test_a_value_without_a_name_reads_as_unknown(hass: HomeAssistant, fake
 
 
 async def test_a_setting_the_device_ignores_is_reported_as_not_confirmed(hass: HomeAssistant, fake, setup) -> None:
-    # Related models acknowledge a new brightness and keep the old one.
+    # Related models acknowledge a new brightness and keep the old one; the AC3220/10 takes it (measurement 14).
     fake.readonly_keys = {"D03105"}
     await setup()
     with pytest.raises(HomeAssistantError) as raised:

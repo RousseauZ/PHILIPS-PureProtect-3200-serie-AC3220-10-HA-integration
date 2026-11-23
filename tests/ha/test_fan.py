@@ -94,8 +94,8 @@ async def test_a_mode_or_speed_switches_a_purifier_on_first(hass: HomeAssistant,
     controls_before = len(fake.controls)
     await call(hass, "turn_on", preset_mode="sleep")
     assert fake.is_on and fake.state["D0310C"] == 17
-    # Two messages: the device discards a setting it gets while it is off.
-    assert [set(values) for values in fake.controls[controls_before:]] == [{"D03102"}, {"D0310C"}]
+    # One message: the device applies a mode that comes with the switch-on (measurement 14).
+    assert fake.controls[controls_before:] == [{"D03102": 1, "D0310C": 17}]
 
     await call(hass, "turn_off")
     await call(hass, "set_percentage", percentage=80)
@@ -157,7 +157,7 @@ async def test_a_mode_switches_a_purifier_on_that_went_to_standby_during_a_resta
     # Without the power key the mode would be answered "success" and discarded.
     await call(hass, "set_preset_mode", preset_mode="sleep")
 
-    assert fake.controls[sent:] == [{"D03102": 1}, {"D0310C": 17}]
+    assert fake.controls[sent:] == [{"D03102": 1, "D0310C": 17}]
     assert fake.is_on and fake.state["D0310C"] == 17 and fan(hass).attributes["preset_mode"] == "sleep"
 
 

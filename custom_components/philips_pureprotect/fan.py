@@ -83,22 +83,23 @@ class PureProtectFan(PureProtectEntity, FanEntity):
         if percentage == 0:
             await self.async_turn_off()
             return
-        # Power first and on its own: the device discards a setting it gets
-        # while it is off, and whether it takes one in the same message as the
-        # power key is not measured yet.
-        #
         # "Switch on" is always sent. What is shown as on may be off: a
         # purifier in standby reports nothing, so a status from before a
         # restart, or one whose switch-off frame was lost, is never corrected.
         # For a mode or a speed only a status received in this session counts
         # as proof that the purifier is on.
-        plain = preset_mode is None and percentage is None
-        if plain or not (self.is_on and self.coordinator.session.status_is_live):
-            await self.coordinator.async_write({Key.POWER: 1})
+        #
+        # A mode travels in the same message as the switch-on: the device
+        # applies both (measurement 14), and it does not run in its previous
+        # mode for a moment first.
+        values: dict[str, int] = {}
         if preset_mode is not None:
-            await self.coordinator.async_write({Key.MODE: PRESET_MODES[preset_mode]})
+            values[Key.MODE] = PRESET_MODES[preset_mode]
         elif percentage is not None:
-            await self.coordinator.async_write({Key.MODE: _speed_for(percentage)})
+            values[Key.MODE] = _speed_for(percentage)
+        if not values or not (self.is_on and self.coordinator.session.status_is_live):
+            values[Key.POWER] = 1
+        await self.coordinator.async_write(values)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Switch off."""

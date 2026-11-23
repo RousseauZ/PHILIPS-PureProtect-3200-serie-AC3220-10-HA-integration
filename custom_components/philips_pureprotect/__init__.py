@@ -7,7 +7,7 @@ from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 
 from .coordinator import PureProtectConfigEntry, PureProtectCoordinator, status_store
 
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.FAN, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.FAN, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: PureProtectConfigEntry) -> bool:

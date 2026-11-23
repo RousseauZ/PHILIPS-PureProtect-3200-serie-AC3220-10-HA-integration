@@ -287,6 +287,10 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except AirlinkError as err:
             raise self._error("unreachable") from err
 
+    def error(self, key: str) -> HomeAssistantError:
+        """Return the translated error ``key`` for this purifier."""
+        return self._error(key)
+
     def _error(self, key: str) -> HomeAssistantError:
         return HomeAssistantError(
             translation_domain=DOMAIN, translation_key=key, translation_placeholders={"name": self.config_entry.title}

@@ -43,26 +43,32 @@ class PureProtectSelectDescription(SelectEntityDescription):
     companions: Mapping[str, tuple[Companion, ...]] = field(default_factory=dict)
 
 
-# What the light selects send along. The Air+ app was seen to write the lamp
-# function and the brightness together (docs/metingen.md, measurements 6 and
-# 7); which of these the AC3220 takes from the network is for the
-# write-matrix measurement to tell, and related models ignore a brightness.
-# Until then as little as possible travels along. Change these tables when
-# the measurement is in.
+# What the light selects send along. The AC3220/10 takes brightness, lamp
+# function and scene from the network, alone and together (docs/metingen.md,
+# measurement 14). The Air+ app switches the light off with brightness 0 and
+# lamp function 0 in one message (measurements 6 and 7), and so does this.
 #
-# "Light: off" writes the lamp function alone. A light mode needs a
-# brightness only when the brightness is off, or the light would stay dark.
+# Coming back from off needs both again: a light mode brings automatic
+# brightness along when the brightness is 0, and a brightness brings the
+# air-quality light along when the lamp function is off. A scene is a colour
+# of the ambient light, so it switches that on; unlike the app it keeps a
+# brightness that was chosen.
+_LIGHT_OFF = (Companion(Key.LIGHT_MODE, LIGHT_OFF),)
 _BRIGHTNESS_BACK_ON = (Companion(Key.BRIGHTNESS, BRIGHTNESS_AUTO, when_status_shows=frozenset({BRIGHTNESS_OFF})),)
+_LIGHT_BACK_ON = (Companion(Key.LIGHT_MODE, LIGHT_AIR_QUALITY, when_status_shows=frozenset({LIGHT_OFF})),)
 LIGHT_MODE_COMPANIONS: Mapping[str, tuple[Companion, ...]] = {
-    "off": (),
+    "off": (Companion(Key.BRIGHTNESS, BRIGHTNESS_OFF),),
     "air_quality": _BRIGHTNESS_BACK_ON,
     "ambient": _BRIGHTNESS_BACK_ON,
 }
-# A scene is chosen the way the app does: with the ambient light on, at automatic brightness.
-_SCENE_AS_THE_APP = (Companion(Key.BRIGHTNESS, BRIGHTNESS_AUTO), Companion(Key.LIGHT_MODE, LIGHT_AMBIENT))
-LIGHT_SCENE_COMPANIONS: Mapping[str, tuple[Companion, ...]] = {
-    f"scene_{scene}": _SCENE_AS_THE_APP for scene in (1, 2, 3, 4)
+BRIGHTNESS_COMPANIONS: Mapping[str, tuple[Companion, ...]] = {
+    "auto": _LIGHT_BACK_ON,
+    "low": _LIGHT_BACK_ON,
+    "bright": _LIGHT_BACK_ON,
+    "off": _LIGHT_OFF,
 }
+_SCENE_LIGHT = (Companion(Key.LIGHT_MODE, LIGHT_AMBIENT), *_BRIGHTNESS_BACK_ON)
+LIGHT_SCENE_COMPANIONS: Mapping[str, tuple[Companion, ...]] = {f"scene_{scene}": _SCENE_LIGHT for scene in (1, 2, 3, 4)}
 
 SELECTS: tuple[PureProtectSelectDescription, ...] = (
     PureProtectSelectDescription(
@@ -76,7 +82,8 @@ SELECTS: tuple[PureProtectSelectDescription, ...] = (
         key="light_brightness",
         translation_key="light_brightness",
         status_key=Key.BRIGHTNESS,
-        choices={"auto": BRIGHTNESS_AUTO, "low": 115, "bright": 123},
+        choices={"auto": BRIGHTNESS_AUTO, "low": 115, "bright": 123, "off": BRIGHTNESS_OFF},
+        companions=BRIGHTNESS_COMPANIONS,
     ),
     PureProtectSelectDescription(
         key="light_scene",

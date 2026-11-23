@@ -79,6 +79,11 @@
         "name": "Storing"
       }
     },
+    "button": {
+      "filter_cleaned": {
+        "name": "Filter gereinigd"
+      }
+    },
     "switch": {
       "child_lock": {
         "name": "Kinderslot"
@@ -113,7 +118,8 @@
         "state": {
           "auto": "Automatisch",
           "low": "Laag",
-          "bright": "Fel"
+          "bright": "Fel",
+          "off": "Uit"
         }
       },
       "light_scene": {
@@ -160,6 +166,9 @@
     },
     "wrong_device": {
       "message": "Op het adres van {name} antwoordt een ander apparaat. Er is niets verstuurd."
+    },
+    "filter_interval_unknown": {
+      "message": "{name} meldt niet hoeveel uur een reinigingsinterval duurt, dus de teller kan niet worden teruggezet."
     }
   },
   "issues": {

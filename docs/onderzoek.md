@@ -530,9 +530,9 @@ Het programma voert deze reeks uit:
 |---|---|---|---|
 | 0 | Snelle controle uit 7.1 | Firmware, sleutelset en werkende schrijfopdrachten van jouw apparaat | Gedaan met het meetprogramma |
 | 1 | Meetprogramma bouwen en de reeks uit 7.2 draaien | Ontwerpkeuzes vastgelegd; de kern van de protocollaag bestaat | Programma klaar. Elf metingen gedaan, zie [metingen.md](metingen.md); daar staat ook wat nog open is |
-| 2 | Protocol- en sessiepakket met nagebootst apparaat en tests | Betrouwbare verbinding, los van Home Assistant te testen | Klaar en door drie controleurs nagelopen; 154 tests. Nog niet tegen het echte apparaat gedraaid |
-| 3 | Minimale integratie: instellen met IP-adres, coordinator, ventilator en sensoren | Werkend in je eigen Home Assistant | Geschreven, samen met stap 4. Door vier controleurs nagelopen, de bewezen fouten opgelost en dat onafhankelijk nagecontroleerd; 116 tests in Home Assistant 2026.11. Nog niet in je eigen Home Assistant gedraaid |
-| 4 | Overige entiteiten, diagnostiek, DHCP-herkenning, herconfiguratie, vertalingen | Volledige functionaliteit | Entiteiten, diagnostiek, herconfiguratie en vertalingen zijn er. Nog niet: DHCP-herkenning, zoeken in het netwerk, knoppen voor de filtertellers |
+| 2 | Protocol- en sessiepakket met nagebootst apparaat en tests | Betrouwbare verbinding, los van Home Assistant te testen | Klaar en door drie controleurs nagelopen; 157 tests. Draait tegen het echte apparaat: status binnen na 1 s, schrijfopdrachten bevestigd na 0,3 s (meting 15) |
+| 3 | Minimale integratie: instellen met IP-adres, coordinator, ventilator en sensoren | Werkend in je eigen Home Assistant | Geschreven, samen met stap 4. Door vier controleurs nagelopen, de bewezen fouten opgelost en dat onafhankelijk nagecontroleerd; 119 tests in Home Assistant 2026.11. Nog niet in je eigen Home Assistant gedraaid |
+| 4 | Overige entiteiten, diagnostiek, DHCP-herkenning, herconfiguratie, vertalingen | Volledige functionaliteit | Entiteiten, de knop "Filter gereinigd", diagnostiek, herconfiguratie en vertalingen zijn er. Nog niet: DHCP-herkenning, zoeken in het netwerk, een pictogram |
 | 5 | Duurtest van één tot twee weken op je eigen apparaat, met de diagnostiektellers | Aantoonbaar stabiel | Nog niet begonnen |
 | 6 | Eerste release met installatielink; kleine verbeteringen aanbieden bij de bestaande projecten | Publiek beschikbaar | Nog niet begonnen |
 
@@ -562,11 +562,13 @@ Het programma voert deze reeks uit:
 |---|---|---|
 | Domeinnaam | `philips_pureprotect`, met weergavenaam "Philips PureProtect". Het domein is definitief; de weergavenaam kan later nog wijzigen. | 22 november 2026 |
 | Indeling van de ventilator | Voorlopig variant B uit 6.6: de standen auto en slaap, en vijf snelheden; medium en turbo zijn 60% en 100%. De meting bevestigde dat snelheid 3 en medium, en snelheid 5 en turbo, hetzelfde toerental geven. De tabel is gegevensgestuurd, dus wisselen naar variant A blijft een kleine wijziging. | 23 november 2026, door mij gekozen; jij kunt het nog omdraaien |
-| Licht | Voorlopig drie keuzelijsten (licht, helderheid, scène), geschreven zoals de app dat doet. Definitief na de meting `write-matrix`. | 23 november 2026, voorlopig |
+| Licht | Drie keuzelijsten: licht (uit, luchtkwaliteit, sfeerlicht), helderheid (automatisch, laag, fel, uit) en scène. Uitzetten gaat zoals in de app: helderheid 0 en lampfunctie 0 in één opdracht. Weer aanzetten neemt wat nodig is mee, zodat het licht niet donker blijft. Een scène zet het sfeerlicht aan en houdt de gekozen helderheid. De meting `write-matrix` toonde dat het apparaat dit allemaal aanneemt. | 23 november 2026 |
 | Minimale Home Assistant-versie | 2026.11.0. Jouw installatie draait 2026.11.2, dezelfde versie waartegen de tests draaien. | 23 november 2026 |
 | Aan of uit na een herstart | Een apparaat dat aan staat beantwoordt een nieuw abonnement binnen twee seconden en meldt daarna elke paar seconden iets; in stand-by zwijgt het. Antwoordt het apparaat wel op controles maar komt er tien seconden na een nieuw abonnement geen statusbericht, dan gaat de integratie ervan uit dat het uit staat. Het eerste statusbericht daarna geeft de werkelijke toestand. Zonder deze regel zou Home Assistant na een herstart "aan" blijven tonen voor een apparaat dat uit staat. | 23 november 2026, door mij gekozen |
 | Meetwaarden terwijl het apparaat uit staat | Fijnstof, allergenenindex, temperatuur en luchtvochtigheid zijn "onbekend" zolang het apparaat uit staat en "sensoren in stand-by" uit is, omdat het dan niet meet. Dit wijkt af van "laatste waarden blijven staan" in 6.3: een temperatuur van gisteren als actueel tonen is misleidend. | 23 november 2026, door mij gekozen; jij kunt het nog omdraaien |
-| Licht uitzetten | Voorlopig alleen de lampfunctie op uit, zonder de helderheid te wijzigen. Verwante modellen negeren een nieuwe helderheid, en dan zou uitzetten als mislukt worden gemeld. Definitief na de meting `write-matrix`. | 23 november 2026, voorlopig |
+| Aanzetten met een stand | De ventilator stuurt aanzetten en de stand in één opdracht; het apparaat past beide toe (meting 14) | 23 november 2026 |
+| Filter | Een knop "Filter gereinigd" die de reinigingsteller terugzet, zoals de app. Geen knop voor een nieuw filter, omdat de app die niet liet zien | 23 november 2026 |
+| Weergegeven index (`D0312A`) | Geen entiteit: het apparaat negeert de schrijfopdracht | 23 november 2026 |
 
 **Beslissingen voor jou:**
 

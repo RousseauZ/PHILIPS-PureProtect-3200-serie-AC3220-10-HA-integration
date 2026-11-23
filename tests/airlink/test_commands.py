@@ -111,12 +111,12 @@ def test_discarded_write_is_not_confirmed_after_exactly_one_resend(bench: Bench)
         await bench.settled()
         registrations = len(fake.registrations)
         with pytest.raises(NotConfirmedError, match="accepted but not confirmed") as caught:
-            await session.write({"D03105": 0})  # acknowledged and discarded by the device
-        assert caught.value.values == {"D03105": 0}
-        assert fake.controls == [{"D03105": 0}, {"D03105": 0}], "the command is sent exactly twice"
+            await session.write({"D0312A": 0})  # acknowledged and discarded by the device (measurement 14)
+        assert caught.value.values == {"D0312A": 0}
+        assert fake.controls == [{"D0312A": 0}, {"D0312A": 0}], "the command is sent exactly twice"
         assert exchanges(bench) == [SYNC, CONTROL, SYNC, CONTROL]
         assert len(fake.registrations) == registrations + 1, "one refresh before the resend"
-        assert session.status is not None and session.status["D03105"] == 101
+        assert session.status is not None and session.status["D0312A"] == 1
         diag = session.diagnostics()
         assert diag.commands_unconfirmed == 1
         # Frames kept arriving, so the stream is fine and the ladder stays where it is.
@@ -202,7 +202,7 @@ def test_newer_write_takes_over_only_the_keys_it_names(bench: Bench) -> None:
         assert all(control.get("D0312A", 2) == 2 for control in fake.controls[1:])
         assert (fake.state["D03103"], fake.state["D0312A"]) == (1, 2)
 
-    bench.run(body)
+    bench.run(body, readonly_keys=set())  # a firmware that takes the index
 
 
 def test_same_value_from_a_newer_write_supersedes_nothing(bench: Bench) -> None:
@@ -370,8 +370,37 @@ def test_switch_off_is_not_assumed_while_a_frame_shows_the_device_on(bench: Benc
         diag = session.diagnostics()
         assert diag.switch_offs_assumed == 0 and diag.commands_unconfirmed == 1
 
-    # No frame follows such a write: only the new registration is answered.
-    bench.run(body, push_on_same_value=False)
+    # No frame follows such a write: only the new registration is answered,
+    # by firmware that answers a new token from the port it already serves.
+    bench.run(body, push_on_same_value=False, answer_new_token_on_same_port=True)
+
+
+def test_switch_off_is_not_assumed_on_the_measured_device_while_it_reports_on(bench: Bench) -> None:
+    async def body() -> None:
+        fake = bench.fake
+        session = await bench.live(options=bench.quiet)
+        await bench.settled()
+        # A device that answers "success" to the switch-off and stays on. The
+        # AC3220/10 does not answer the new registration (measurement 13),
+        # but a device that is on keeps reporting: every few seconds while it
+        # runs (measurement 12), and after each write (measurement 14).
+        fake._set_power = lambda value: False  # type: ignore[method-assign]
+
+        async def sensor() -> None:
+            for value in range(70, 90):
+                await asyncio.sleep(0.12)
+                fake.change("D03221", value)
+
+        reporting = asyncio.ensure_future(sensor())
+        try:
+            with pytest.raises(NotConfirmedError):
+                await session.write({"D03102": 0})
+        finally:
+            reporting.cancel()
+        assert session.status is not None and session.status["D03102"] == 1
+        assert session.diagnostics().switch_offs_assumed == 0
+
+    bench.run(body)
 
 
 def test_power_on_from_standby_is_confirmed(bench: Bench) -> None:
@@ -530,7 +559,7 @@ def test_frame_without_the_value_after_the_settle_window_ends_the_wait(bench: Be
         began = time.monotonic()
         ticker = asyncio.ensure_future(later_frame())
         with pytest.raises(NotConfirmedError):
-            await session.write({"D03105": 0})
+            await session.write({"D0312A": 0})
         await ticker
         assert time.monotonic() - began < 5.0, "the 30 s deadline was not waited out"
         assert len(fake.controls) == 2
@@ -659,7 +688,7 @@ def test_writes_are_serialised(bench: Bench) -> None:
         assert exchanges(bench) == [SYNC, CONTROL] * 3
         assert (fake.state["D03103"], fake.state["D0310C"], fake.state["D0312A"]) == (1, 18, 0)
 
-    bench.run(body)
+    bench.run(body, readonly_keys=set())  # a firmware that takes the index
 
 
 def test_liveness_sync_never_comes_between_the_sync_and_the_write(bench: Bench) -> None:
@@ -824,7 +853,7 @@ def test_unneeded_new_token_is_not_recorded_as_the_working_mode(bench: Bench) ->
         # This device says nothing after a write it discards. The session
         # cannot tell that from a dead stream and climbs the ladder.
         with pytest.raises(NotConfirmedError):
-            await session.write({"D03105": 0})
+            await session.write({"D0312A": 0})
         assert session.diagnostics().escalations == 1
         await bench.until(lambda: len(fake.observers) == 2, "no registration with a new token")
 
@@ -859,4 +888,6 @@ def test_giving_up_a_token_survives_a_device_that_mishandles_the_deregistration(
         fake.change("D03221", 88)
         await bench.until(lambda: session.status is not None and session.status["D03221"] == 88)
 
-    bench.run(body)
+    # Firmware that answers a new token from the port it already serves; the
+    # AC3220/10 does not (measurement 13).
+    bench.run(body, answer_new_token_on_same_port=True)

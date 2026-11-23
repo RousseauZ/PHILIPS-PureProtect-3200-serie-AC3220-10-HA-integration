@@ -18,12 +18,13 @@ it answers a new registration with a status frame within about 2 s while it
 is on, never in standby, and it does not answer a repeated registration with
 the same token; it ignores a deregistration and a Reset.
 
-Not measured yet: whether a registration with a new token from the port that
-already holds the observation is answered directly. Measured is that it
-takes the stream over, and that a registration from a new port is answered.
-Where the session knows that it missed a change it registers with a new
-token, which costs nothing if the device stays silent and brings the status
-if it does not.
+A registration with a new token from the port that already holds the
+observation is not answered either (measurement 13, 0 of 6), but it takes
+the stream over. Where the session knows that it missed a change it still
+registers with a new token: on the AC3220/10 that brings no status, and the
+next report does, which comes within seconds while the device runs
+(measurement 12) and carries the whole status; firmware that answers a new
+token sends it at once.
 
 Presumed standby. A device in standby cannot say that it is off, so the
 session concludes it from what was measured: a registration from a newly
@@ -1036,7 +1037,8 @@ class Session:
         when the first one was lost.
 
         Nothing is concluded from a registration with a new token on a
-        socket in use: whether the device answers that one is not measured.
+        socket in use: the AC3220/10 does not answer that one, on or off
+        (measurement 13).
         """
         self._first_frame_expected = True
 
@@ -1112,10 +1114,10 @@ class Session:
 
         A repeated registration with the same token gets no answer while the
         device still holds it (measurement 8). A new token takes the stream
-        over at once (measured) and makes the registration a new one, the
-        kind that was answered within 2 s when it came from a new port.
-        Whether it is answered from the same port is not measured yet; if
-        not, nothing is lost but the answer. In standby nothing answers.
+        over at once (measured). The AC3220/10 does not answer it from the
+        same port (measurement 13), so nothing is gained there but the
+        stream; firmware that does answer sends the status at once. In
+        standby nothing answers.
 
         Not a step on the ladder of rule 6: the label stays.
         """
@@ -1315,12 +1317,10 @@ class Session:
         device but the token it reports to. In standby nothing answers, so
         False is the normal result for a device that is off.
 
-        Not measured yet: whether a device that is on answers this. Measured
-        (measurement 8) is that a new registration from a new port is
-        answered within about 2 s, that one with the same token is not, and
-        that a new token from the same port takes the stream over. Until the
-        probe has measured the remaining case, False can also come from a
-        device that is on, and nothing should be built on it.
+        Measured on the AC3220/10 (measurement 13): a new token from the
+        port in use is not answered, on or off, so there this returns False
+        whatever the device does, and nothing should be built on it. Only a
+        registration from a new port is answered (0.2 to 2.1 s).
         """
         self._check_running()
         waiter = _FrameWaiter({})

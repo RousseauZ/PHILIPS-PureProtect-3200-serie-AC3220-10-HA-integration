@@ -79,6 +79,11 @@
         "name": "Fault"
       }
     },
+    "button": {
+      "filter_cleaned": {
+        "name": "Filter cleaned"
+      }
+    },
     "switch": {
       "child_lock": {
         "name": "Child lock"
@@ -113,7 +118,8 @@
         "state": {
           "auto": "Automatic",
           "low": "Low",
-          "bright": "Bright"
+          "bright": "Bright",
+          "off": "Off"
         }
       },
       "light_scene": {
@@ -160,6 +166,9 @@
     },
     "wrong_device": {
       "message": "Another device answers at the address of {name}. Nothing was sent."
+    },
+    "filter_interval_unknown": {
+      "message": "{name} does not report how many hours a filter cleaning lasts, so the counter cannot be set back."
     }
   },
   "issues": {
