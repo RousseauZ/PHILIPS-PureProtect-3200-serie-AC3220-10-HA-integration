@@ -319,6 +319,8 @@ Sleutels zonder bekende betekenis: `D03106`, `D0311F`, `D03136`, `D0313B`, `D031
 
 | Vraag | Opdracht |
 |---|---|
+| Met welke servers praat de luchtreiniger? | DNS-logboek van AdGuard Home, gefilterd op 10.10.10.113 |
+| Blijft hij lokaal goed werken zonder internet: wat meldt `ConnectType`, herstart de wifi-module zich, blijft de bediening werken, en blijft de app thuis werken? | Internet blokkeren in de router, daarna een dag de sensoren "Cloudverbinding" en "Laatst opgestart" en de diagnostiek bekijken |
 | Blijft het apparaat meetwaarden sturen als het uit staat met "sensoren in stand-by" aan? De integratie toont ze dan; zonder deze schakelaar zijn ze "onbekend". | Zet "sensoren in stand-by" aan, zet het apparaat uit, en draai `watch --alles` een kwartier |
 | Welke controle blijft antwoorden gedurende uren stilte in stand-by? | `liveness` in stand-by, met "sensoren in stand-by" uit |
 | Waarom waren zes berichten in de nacht niet te lezen? | `python -m pureprotect_probe.inspect_run metingen/20261122-214359-liveness` opnieuw; de terugblik noemt nu de reden |

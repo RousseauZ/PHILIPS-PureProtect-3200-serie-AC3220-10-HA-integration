@@ -37,6 +37,12 @@
       },
       "timer_end": {
         "default": "mdi:timer-outline"
+      },
+      "cloud_connection": {
+        "default": "mdi:cloud-outline"
+      },
+      "last_restart": {
+        "default": "mdi:restart"
       }
     },
     "binary_sensor": {

@@ -15,6 +15,7 @@ Een lokale Home Assistant-integratie voor de Philips PureProtect 3200-serie. Ze 
 | Stand | Eén keuzelijst met alle standen van het apparaat: uit, auto, slaap, medium, turbo en snelheid 1 tot 5. Staat op de apparaatpagina onder Bediening |
 | Keuzelijsten | Licht (uit, luchtkwaliteit, sfeerlicht), helderheid (automatisch, laag, fel, uit), scène van het sfeerlicht, timer |
 | Knoppen | Filter gereinigd: zet de reinigingsteller terug, zoals de knop in de Air+ app. Nieuw filter geplaatst: zet de resterende levensduur van het filter op vol; alleen na het plaatsen van een nieuw filter |
+| Diagnose | Cloudverbinding (zoals de wifi-module die meldt), laatst opgestart, laatste status ontvangen |
 | Diagnostiek | Download met tellers van de verbinding en de laatste status, zonder apparaatkenmerken |
 
 Niet beschikbaar, omdat het apparaat ze niet lokaal aanbiedt: het weekschema en de instellingen voor meldingen uit de Air+ app. Gebruik daarvoor automatiseringen in Home Assistant.
@@ -29,6 +30,25 @@ Lezen en bedienen zijn voor alle entiteiten op een echte AC3220/10 gemeten. Alle
 - Zolang de luchtreiniger uit staat, meet hij niet. Fijnstof, allergenenindex, temperatuur en luchtvochtigheid zijn dan "onbekend" in plaats van de laatste waarde. Met de schakelaar "Sensoren in stand-by" aan toont Home Assistant ook dan wat het apparaat meldt; of het dan blijft meten, is nog niet op het apparaat gemeten. Die schakelaar kun je alleen omzetten terwijl de luchtreiniger aan staat.
 - Het apparaat negeert instellingen zolang het uit staat. Weet Home Assistant dat het uit staat, dan stuurt het ze niet en meldt het dat je het apparaat eerst moet aanzetten.
 - Een opdracht slaagt pas als het apparaat de wijziging terugmeldt. Gebeurt dat niet, dan krijg je een foutmelding in plaats van een schakelaar die terugspringt.
+
+## Zonder cloud
+
+De integratie heeft geen internet nodig: ze praat alleen met de luchtreiniger in je eigen netwerk. Wil je dat er geen gegevens het huis uit gaan, blokkeer dan het internet van de luchtreiniger.
+
+1. **Kijk eerst waarmee hij praat.** In AdGuard Home of je router: het DNS-logboek, gefilterd op het adres van de luchtreiniger. Volgens het onderzoek gaat het om de servers van Philips (`www.api.air.philips.com`) en een AWS-server in Frankfurt (`…iot.eu-central-1.amazonaws.com`); op dit model is dat nog niet gemeten.
+2. **Blokkeer al het internetverkeer van de luchtreiniger in je router of firewall**, op IP- of MAC-adres. Alleen DNS blokkeren is niet genoeg: een apparaat kan een vaste DNS-server of vaste adressen gebruiken. Verkeer binnen je netwerk tussen Home Assistant en de luchtreiniger (UDP-poort 5683) moet blijven werken.
+3. **Controleer het resultaat in Home Assistant**, onder Diagnose op de apparaatpagina:
+   - "Cloudverbinding" hoort niet langer "Online" te zeggen.
+   - Bediening en sensoren werken gewoon door.
+   - "Laatst opgestart" blijft staan. Springt die steeds naar nu, dan herstart de wifi-module zichzelf omdat hij de cloud mist; meld dat.
+
+Wat je inlevert:
+- Geen firmware-updates meer, ook geen beveiligingsupdates.
+- Het weekschema en de meldingen in de Air+ app werken niet meer; maak daarvoor automatiseringen in Home Assistant.
+- Bediening via de app buiten je huis werkt niet meer; gebruik daarvoor de Home Assistant-app.
+- De luchtreiniger opnieuw met wifi koppelen, bijvoorbeeld na een nieuwe router, kan alleen met de app en tijdelijk internet.
+
+De Air+ app op je telefoon stuurt zelf ook gegevens naar Philips. Gebruik je de app niet meer, dan stopt dat ook.
 
 ## Installeren
 
