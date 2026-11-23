@@ -563,13 +563,13 @@ Het programma voert deze reeks uit:
 | Domeinnaam | `philips_pureprotect`, met weergavenaam "Philips PureProtect". Het domein is definitief; de weergavenaam kan later nog wijzigen. | 22 november 2026 |
 | Indeling van de ventilator | Voorlopig variant B uit 6.6: de standen auto en slaap, en vijf snelheden; medium en turbo zijn 60% en 100%. De meting bevestigde dat snelheid 3 en medium, en snelheid 5 en turbo, hetzelfde toerental geven. De tabel is gegevensgestuurd, dus wisselen naar variant A blijft een kleine wijziging. | 23 november 2026, door mij gekozen; jij kunt het nog omdraaien |
 | Licht | Voorlopig drie keuzelijsten (licht, helderheid, scène), geschreven zoals de app dat doet. Definitief na de meting `write-matrix`. | 23 november 2026, voorlopig |
+| Minimale Home Assistant-versie | 2026.11.0. Jouw installatie draait 2026.11.2, dezelfde versie waartegen de tests draaien. | 23 november 2026 |
 
 **Beslissingen voor jou:**
 
 | Beslissing | Opties | Mijn voorkeur |
 |---|---|---|
 | Reikwijdte | Alleen de 3200-serie, of ook de verwante 2200- en 4200-serie | Beginnen met de 3200-serie; de modeltabel zo opzetten dat de andere erbij kunnen |
-| Minimale Home Assistant-versie | 2026.11.0 of nieuwer | 2026.11.0, tenzij jouw installatie ouder is en niet kan worden bijgewerkt |
 
 ---
 
