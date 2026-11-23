@@ -126,13 +126,15 @@ Niet veranderd tijdens de rondgang: `D0312A`, `D0312B`, `D0312C`, `D03106`, `D03
 | Eerste statusbericht na een nieuw abonnement | Na 0,2 s |
 | Vernieuwen met hetzelfde kenmerk | De ene vernieuwing die te beoordelen was (het was stil vlak ervoor) kreeg geen antwoord binnen 1,5 s. Twee waren niet te beoordelen. |
 | Na een verandering | 5 berichten, geen dubbele |
-| Abonneren met een nieuw kenmerk vanaf dezelfde poort | Daarna 0 berichten op het oude kenmerk en 4 op het nieuwe: het nieuwe abonnement vervangt het oude |
+| Abonneren met een nieuw kenmerk vanaf dezelfde poort | Daarna 0 berichten op het oude kenmerk en 4 op het nieuwe: het nieuwe abonnement vervangt het oude. Of de aanvraag zelf werd beantwoord was niet te beoordelen |
+
+Kanttekening bij deze meting: het venster voor een antwoord was 1,5 s, terwijl een nieuw abonnement vanaf een nieuwe poort tot 1,9 s nodig had. "Vernieuwen met hetzelfde kenmerk wordt niet beantwoord" steunt dus op één waarneming met een te kort venster. De meting is daarom herschreven (venster 3 s, zes rondes, met een vergelijkingsvenster zonder aanvraag) en moet opnieuw.
 
 ### Meting 9: `second-client`, twee clients vanaf dezelfde computer
 
 | Onderwerp | Uitkomst |
 |---|---|
-| Client B abonneert vanaf een andere poort | Daarna ontvangt A niets meer en B alles: de nieuwste abonnee verdringt de oudste |
+| Client B abonneert vanaf een andere poort | Binnen 1,5 s geen antwoord op de aanvraag zelf. Daarna ontvangt A niets meer en B alles: de nieuwste abonnee verdringt de oudste |
 | Verzonnen teller | `failed`: het apparaat controleert de teller |
 | A synct, B synct, A schrijft, B schrijft | A `failed`, B `success`: de laatste sync bepaalt de geldige teller voor alle clients vanaf dit adres |
 
@@ -183,7 +185,7 @@ Zes keer binnen twee seconden is geen toeval: met het apparaat aan beantwoordt h
 | Een nieuw kenmerk vervangt het oude direct | Overstappen op een nieuw kenmerk kan zonder overgangsperiode |
 | Afmelden en een reset worden genegeerd | Bij het stoppen valt er niets af te melden. Het apparaat blijft naar de laatste abonnee sturen tot een nieuwe zich meldt; dat is onschadelijk. |
 | Clients vanaf hetzelfde adres delen één teller; de laatste sync telt | Bevestigt: sync direct vóór elk commando, onder één slot. Een sync als bereikbaarheidscontrole kan de teller van een andere client ongeldig maken; de ping heeft dat nadeel niet. |
-| Met het apparaat aan beantwoordt het een nieuw abonnement binnen ongeveer 2 s; een vernieuwing met hetzelfde kenmerk niet | Bij het opstarten van Home Assistant komt de status vanzelf binnen als het apparaat aan staat. Vernieuwen met hetzelfde kenmerk is alleen een vangnet en levert zelf geen status op. |
+| Met het apparaat aan beantwoordt het een nieuw abonnement binnen ongeveer 2 s; een vernieuwing met hetzelfde kenmerk vermoedelijk niet (één waarneming, wordt opnieuw gemeten) | Bij het opstarten van Home Assistant komt de status vanzelf binnen als het apparaat aan staat. Vernieuwen met hetzelfde kenmerk is alleen een vangnet en levert zelf geen status op. |
 | De info-aanvraag wordt vaak niet beantwoord, zeker bij meerdere tegelijk (7 van 15) | Herkenning vraagt drie tot vijf pogingen, één tegelijk, met een seconde ertussen |
 | Het apparaat is vindbaar via broadcast, niet via multicast; een ander apparaat in het netwerk antwoordt ook op poort 5683 | Automatisch zoeken via broadcast met herhalingen. Elk antwoord streng controleren op `device_id`, `product_id` en een bekend model. |
 
@@ -222,10 +224,13 @@ Sleutels zonder bekende betekenis: `D03106`, `D0311F`, `D03136`, `D0313B`, `D031
 
 | Vraag | Opdracht |
 |---|---|
-| Blijft een abonnement ook leveren na lange stilte in stand-by? | `lapse` in stand-by, met de aan/uit-knop als verandering |
+| Wordt opnieuw abonneren beantwoord, met hetzelfde kenmerk en met een nieuw kenmerk vanaf dezelfde poort? De protocollaag gebruikt een nieuw kenmerk om na een gemist bericht de status op te halen, en leunt dus op een "ja" voor het nieuwe kenmerk. | `refresh`, apparaat aan |
 | Welke schrijfopdrachten werken, ook de combinaties die de app voor het licht gebruikt? | `write-matrix` |
-| Zijn de filtertellers lokaal te schrijven? | Met het apparaat aan `set D0520D=719`, daarna `set D0520D=720` |
+| Neemt het apparaat een stand aan die samen met aanzetten in één opdracht staat, en een instelling die direct achter het aanzetten aan komt? | `write-matrix`, groep `combinatie` |
+| Zijn de filtertellers lokaal te schrijven? | `write-matrix`, groep `filter` |
 | Welke controle blijft antwoorden gedurende uren stilte? | `liveness` in stand-by |
+| Blijft een abonnement ook leveren na lange stilte in stand-by? | `lapse` in stand-by, met de aan/uit-knop als verandering |
+| Antwoordt de LG-televisie ook op een CoAP-ping? Dan is "er antwoordt iets op dit adres" geen bewijs dat het de luchtreiniger is. | `ping --host 10.10.10.68` |
 | Bedient het apparaat abonnees vanaf verschillende adressen tegelijk? | `observe` op twee computers tegelijk |
 | Gedrag na een stroomonderbreking | `power-cycle` |
 | Storen de app en een lokale client elkaar? | Tijdens de rondgang niet; `app` test daarnaast of onze controles de app hinderen |

@@ -2,7 +2,7 @@
 
 Dit programma meet hoe jouw luchtreiniger zich op het lokale netwerk gedraagt. De uitkomsten beslissen de open ontwerpkeuzes uit [het onderzoeksrapport](../../docs/onderzoek.md), hoofdstuk 7.
 
-Het programma is alleen getest tegen een nagebootst apparaat, niet tegen een echte luchtreiniger. Zie [Wat is getest](#wat-is-getest).
+Het programma is gedraaid tegen een echte AC3220/10 met firmware 0.2.3; de uitkomsten staan in [het meetlogboek](../../docs/metingen.md). Wat daarnaast geautomatiseerd wordt getest, staat onder [Wat is getest](#wat-is-getest).
 
 ## Wat het doet
 
@@ -46,9 +46,9 @@ Doe ze in deze volgorde. Elke meting schrijft een eigen map onder `metingen/`.
 | # | Opdracht | Duur | Wat het beslist |
 |---|---|---|---|
 | 1 | `quick` | 2 min | Firmware, sleutels, welke controles antwoorden, hoe het eerste statusbericht komt |
-| 2 | `write-matrix` | 5 min | Welke schrijfopdrachten werken en hoe snel ze worden teruggemeld |
+| 2 | `write-matrix` | 8 min | Welke schrijfopdrachten werken, ook gecombineerd, en hoe snel ze worden teruggemeld |
 | 3 | `lapse` | 20 min | Of een abonnement zonder vernieuwing blijft leveren |
-| 4 | `refresh` | 3 min | Of vernieuwen direct wordt beantwoord, en met welk kenmerk |
+| 4 | `refresh` | 5 min | Of opnieuw abonneren wordt beantwoord: met hetzelfde kenmerk, en met een nieuw kenmerk vanaf dezelfde poort |
 | 5 | `liveness` | 2 uur | Welke bereikbaarheidscontrole blijft antwoorden terwijl het apparaat stil is |
 | 6 | `second-client` | 2 min | Of het apparaat één of meer abonnees per adres bedient, en of de teller gedeeld is |
 | 7 | `deregister` | 2 min | Of het apparaat afmelden en een reset respecteert |
@@ -58,7 +58,11 @@ Doe ze in deze volgorde. Elke meting schrijft een eigen map onder `metingen/`.
 
 Aanwijzingen per meting:
 
-- **`write-matrix`** verandert stand, snelheid, licht en instellingen en zet ze daarna terug. Het apparaat kan bij elke opdracht piepen, de ventilator draait kort op de hoogste stand en er wordt kort een timer gezet. Doe dit dus niet 's nachts. Het programma vraagt eerst om bevestiging. Met `--groepen lamp,snelheden` beperk je de meting tot die groepen. Aan het eind schrijft het programma elke aangeraakte instelling terug, ook als je met Ctrl-C afbreekt, en meldt het wat het niet kon bevestigen.
+- **`write-matrix`** verandert stand, snelheid, licht en instellingen en zet ze daarna terug. Het apparaat kan bij elke opdracht piepen, het gaat een paar keer uit en aan, de ventilator draait kort op de hoogste stand en er wordt kort een timer gezet. Doe dit dus niet 's nachts. Het programma vraagt eerst om bevestiging. Met `--groepen lamp,snelheden` beperk je de meting tot die groepen. Aan het eind schrijft het programma elke aangeraakte instelling terug, ook als je met Ctrl-C afbreekt, en meldt het wat het niet kon bevestigen.
+  - De groep `licht` schrijft meerdere sleutels in één opdracht, zoals de Air+ app dat doet.
+  - De groep `combinatie` zet het apparaat aan samen met een stand, en stuurt een instelling direct achter het aanzetten aan.
+  - De groep `filter` zet de twee filtertellers één uur lager en weer terug. Neemt het apparaat het terugzetten niet aan, dan loopt een teller één uur achter of staat hij weer op vol.
+- **`refresh`** draai je met het apparaat aan. Elke ronde heeft drie even lange vensters: één zonder aanvraag, één na een aanvraag met hetzelfde kenmerk en één na een aanvraag met een nieuw kenmerk. Een apparaat dat aan staat stuurt ook uit zichzelf berichten; het venster zonder aanvraag laat zien hoe vaak. Een antwoord op een aanvraag herken je doordat het de al bekende status herhaalt.
 - **`lapse`** draai je twee keer: één keer terwijl het apparaat draait, en één keer in stand-by. Draai het daarna eventueel met `--sync-interval 30` om te zien of een sync het abonnement in leven houdt.
 - **`liveness`** draai je met het apparaat in stand-by, bij voorkeur één keer met en één keer zonder "sensoren in stand-by". Met `--duur 1800` kort je de meting in tot een halfuur.
 - **`second-client`** test twee clients vanaf dezelfde computer. Voor twee verschillende computers start je op elk `observe --duur 300` en druk je een paar keer op de standknop.
@@ -74,6 +78,7 @@ Alle opties van een opdracht zie je met `python -m pureprotect_probe <opdracht> 
 | GENEGEERD | Het apparaat antwoordde "success", maar een later statusbericht toont nog de oude waarde |
 | onbekend | Het apparaat antwoordde "success", maar er kwam geen statusbericht. Kijk op het apparaat zelf of er iets veranderde, en noteer dat erbij. |
 | de waarde gold al | Er is niets veranderd; het programma meldt of er toch een statusbericht kwam |
+| DEELS uitgevoerd | Een opdracht met meerdere sleutels: een latere status toont een deel van de waarden wel en een deel niet |
 | geweigerd | Het apparaat antwoordde "failed" |
 
 ### Als het programma vraagt of je hebt gedrukt
@@ -146,7 +151,7 @@ python -m pytest tests
 
 Zonder aiocoap en aioairctrl worden de twee vergelijkende tests overgeslagen; `pip install pytest` is dan genoeg.
 
-Wat deze tests niet kunnen aantonen: hoe een echte luchtreiniger zich gedraagt. De nabootsing doet wat het onderzoek van verwante modellen beschrijft, en dat is voor de AC3220 nog niet gemeten.
+Wat deze tests niet kunnen aantonen: hoe een echte luchtreiniger zich gedraagt. Dat staat in [het meetlogboek](../../docs/metingen.md).
 
 ## Opbouw
 

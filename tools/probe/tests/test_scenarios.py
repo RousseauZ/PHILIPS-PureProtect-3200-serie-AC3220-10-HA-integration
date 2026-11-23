@@ -164,19 +164,74 @@ def test_no_lapse() -> None:
     assert [c["alive"] for c in ctx.result["checkpoints"]] == [True, True]
 
 
-def test_refresh_on_a_device_that_keeps_both_tokens() -> None:
-    ctx = run(lambda fake, ctx: scenarios.refresh_test(ctx, pause=0.05, repeats=2))
-    assert [r["answered"] for r in ctx.result["same"]] == [True, True]
-    assert ctx.result["after_new"] == {"old": 1, "new": 1}
-    assert "bedient beide abonnementen" in text(ctx)
+def refresh(fake_mode: str, *, noisy: bool = False, **quirks: Any) -> scenarios.Context:
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        ticks = itertools.count(100)
+
+        async def sensor() -> None:
+            while True:
+                await asyncio.sleep(0.04)
+                fake.change("D03221", next(ticks))
+
+        task = asyncio.create_task(sensor()) if noisy else None
+        try:
+            await scenarios.refresh_test(ctx, rounds=3, window=0.12, max_wait=0.3)
+        finally:
+            if task is not None:
+                task.cancel()
+
+    return run(body, answer_registration=fake_mode, **quirks)
 
 
-def test_refresh_on_a_device_with_one_observer_per_ip() -> None:
-    ctx = run(lambda fake, ctx: scenarios.refresh_test(ctx, pause=0.05, repeats=1), single_observer_per_ip=True, answer_registration="on_change")
-    assert [r["answered"] for r in ctx.result["same"]] == [False]
-    assert ctx.result["after_same"] == 1
-    assert ctx.result["after_new"] == {"old": 0, "new": 1}
-    assert "heeft het oude vervangen" in text(ctx)
+def test_refresh_on_a_device_that_answers_every_registration() -> None:
+    ctx = refresh("immediate")
+    assert ctx.result["verdicts"] == {"zelfde": "beantwoord", "nieuw": "beantwoord"}
+    assert ctx.result["stats"]["niets"]["with_frame"] == 0
+    assert ctx.result["stats"]["zelfde"]["unchanged"] == 3
+    assert ctx.result["on_retired"] == 0  # nothing changed, so nothing was sent on any token
+
+
+def test_refresh_sees_a_device_that_keeps_serving_replaced_tokens() -> None:
+    ctx = refresh("immediate", noisy=True)
+    assert ctx.result["verdicts"] == {"zelfde": "beantwoord", "nieuw": "beantwoord"}
+    assert ctx.result["on_retired"] > 0 and "bedient oude kenmerken" in text(ctx)
+
+
+def test_refresh_on_a_device_that_answers_only_a_new_token() -> None:
+    ctx = refresh("new_token", single_observer_per_ip=True)
+    assert ctx.result["verdicts"] == {"zelfde": "niet beantwoord", "nieuw": "beantwoord"}
+    assert ctx.result["on_retired"] == 0 and "een nieuw kenmerk vervangt het oude" in text(ctx)
+
+
+def test_refresh_on_push_on_change_firmware() -> None:
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        await scenarios.refresh_test(ctx, rounds=2, window=0.12, max_wait=0.3)
+
+    # The first frame needs the stimulus; after that no registration is answered.
+    ctx = run(body, answer_registration="on_change", single_observer_per_ip=True)
+    assert ctx.result["verdicts"] == {"zelfde": "niet beantwoord", "nieuw": "niet beantwoord"}
+
+
+def test_refresh_judges_by_content_when_the_device_reports_all_the_time() -> None:
+    ctx = refresh("on_change", noisy=True, single_observer_per_ip=True)
+    assert ctx.result["stats"]["niets"]["with_frame"] == 3
+    assert all(v.startswith("niet beantwoord (afgeleid uit de inhoud") for v in ctx.result["verdicts"].values())
+
+
+def test_refresh_recognises_an_answer_between_sensor_reports() -> None:
+    # Answers carry unchanged content; the reports of a changing sensor never do.
+    ctx = refresh("new_token", noisy=True, single_observer_per_ip=True)
+    assert ctx.result["verdicts"]["nieuw"] == "beantwoord"
+    assert ctx.result["verdicts"]["zelfde"].startswith("niet beantwoord")
+
+
+def test_refresh_needs_the_device_to_be_on() -> None:
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        fake.state["D03102"] = 0
+        await scenarios.refresh_test(ctx, rounds=1, window=0.1)
+
+    ctx = run(body)
+    assert "Het apparaat staat uit" in text(ctx) and "stats" not in ctx.result
 
 
 def test_second_client_with_shared_counter_and_two_observers() -> None:
@@ -265,11 +320,15 @@ def test_write_matrix_restores_everything() -> None:
         assert after == {k: v for k, v in before.items() if k not in ("D0310D",)}
 
     ctx = run(body)
-    writes = {(tuple(w["values"].items())[0]): w for w in ctx.result["writes"] if "skipped" not in w}
-    assert writes[("D0310C", 5)]["fan_level"] == 18 and writes[("D0310C", 5)]["echo_s"] is not None
-    assert writes[("D03105", 0)]["verdict"] == "ignored"  # read-only in the simulator
-    assert writes[("D03130", 100)]["reply"] == "success"
+    writes = {tuple(w["values"].items()): w for w in ctx.result["writes"] if "skipped" not in w}
+    assert writes[(("D0310C", 5),)]["fan_level"] == 18 and writes[(("D0310C", 5),)]["echo_s"] is not None
+    assert writes[(("D03105", 0),)]["verdict"] == "ignored"  # read-only in the simulator
+    assert writes[(("D03130", 100),)]["reply"] == "success"
     assert ctx.result["writes"][0]["group"] == "zelfde" and ctx.result["writes"][0]["verdict"] == "same"
+    assert ctx.result["writes"][1]["values"] == {"D0312C": 4} and ctx.result["writes"][1]["verdict"] == "same"
+    partly = writes[(("D03105", 0), ("D03135", 0))]  # the simulator takes the lamp function, not the brightness
+    assert partly["verdict"] == "ignored" and "DEELS uitgevoerd" in scenarios.describe_write(partly)
+    assert writes[(("D0520D", 620),)]["verdict"] == "confirmed" and writes[(("D0540E", 9500),)]["verdict"] == "confirmed"
     assert ctx.result["not_restored"] == [] and ctx.result["restore_unconfirmed"] == []
     assert "Alle gewijzigde instellingen zijn teruggezet en bevestigd." in text(ctx)
     assert any(w.get("skipped") == "missing_key" for w in ctx.result["writes"])  # D03112 is absent
@@ -412,3 +471,74 @@ def test_write_stimulus_changes_and_restores() -> None:
         assert fake.state["D03103"] == 0
 
     run(body, write_stimulus=True, answer_registration="on_change")
+
+
+
+def test_write_matrix_power_combinations() -> None:
+    ctx = run(lambda fake, ctx: scenarios.write_matrix(ctx, groups=["combinatie"], wait=0.3, pause=0.0, assume_yes=True))
+    writes = [w for w in ctx.result["writes"] if w["group"] == "combinatie"]
+    assert [w["values"] for w in writes] == [{"D03102": 0}, {"D03102": 1, "D0310C": 17}, {"D03102": 0}, {"D03103": 1}]
+    assert writes[1]["verdict"] == "confirmed" and writes[3]["verdict"] == "confirmed" and writes[3]["power_on_reply"] == "success"
+    assert "Aanzetten en stand in één opdracht: D03102=1 D0310C=17" in text(ctx)
+    assert "Alle gewijzigde instellingen zijn teruggezet en bevestigd." in text(ctx)
+
+
+def test_write_matrix_restores_light_keys_together_when_single_writes_are_discarded() -> None:
+    before: dict[str, Any] = {}
+
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        fake.readonly_keys = set()
+        fake.together_only_keys = {"D03105", "D03137"}
+        before.update(fake.state)
+        await scenarios.write_matrix(ctx, groups=["licht"], wait=0.3, pause=0.0, assume_yes=True)
+        assert {k: fake.state[k] for k in scenarios.LIGHT_KEYS} == {k: before[k] for k in scenarios.LIGHT_KEYS}
+
+    ctx = run(body)
+    assert ctx.result["not_restored"] == [] and ctx.result["restore_unconfirmed"] == []
+
+
+def test_write_matrix_reports_a_counter_that_cannot_be_written() -> None:
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        fake.readonly_keys = {"D0520D", "D0540E"}
+        await scenarios.write_matrix(ctx, groups=["filter"], wait=0.3, pause=0.0, assume_yes=True)
+
+    ctx = run(body)
+    assert [w["verdict"] for w in ctx.result["writes"]] == ["ignored", "same", "ignored", "same"]
+    assert ctx.result["not_restored"] == []
+
+
+def test_resolve_step() -> None:
+    latest = {"D0520D": 0, "D03103": 1, "D0540E": 50}
+    original = {"D0540E": 51}
+    assert scenarios.resolve_step({"D03103": None}, latest, original) == {"D03103": 1}
+    assert scenarios.resolve_step({"D0540E": scenarios.Relative(-1)}, latest, original) == {"D0540E": 49}
+    assert scenarios.resolve_step({"D0540E": scenarios.ORIGINAL}, latest, original) == {"D0540E": 51}
+    assert scenarios.resolve_step({"D0520D": scenarios.Relative(-1)}, latest, original) is None  # never below zero
+    assert scenarios.resolve_step({"D03112": 1}, latest, original) is None  # not in the status
+
+
+def test_watch_shows_settings_and_hides_sensor_values() -> None:
+    said: list[str] = []
+
+    async def body(fake: FakePurifier, ctx: scenarios.Context) -> None:
+        ctx.say = said.append  # type: ignore[method-assign]
+        task = asyncio.create_task(scenarios.watch(ctx, duration=30.0))
+        while ctx.dev.latest is None:
+            await asyncio.sleep(0.01)
+        fake.change("D03135", 2)
+        fake.change("D03221", 9)
+        fake.change("D03135", 0)
+        await asyncio.sleep(0.1)
+        task.cancel()  # Ctrl-C ends the command and still gives the summary
+        await task
+
+    ctx = run(body)
+    assert ctx.result["changed"] == {"D03135": [1, 2, 0]}
+    assert "D03135: 1 -> 2" in said and not any("D03221" in line for line in said)
+    assert "  D03135: 1 -> 2 -> 0" in text(ctx) and "weggelaten" in text(ctx)
+
+
+def test_watch_without_any_status() -> None:
+    ctx = run(lambda fake, ctx: scenarios.watch(ctx, duration=0.2), answer_registration="on_change")
+    assert "Er is geen statusbericht ontvangen" in text(ctx)
+

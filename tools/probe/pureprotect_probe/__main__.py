@@ -160,9 +160,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--controlepunten", type=parse_minutes, default=(180.0, 300.0, 600.0, 1200.0), help="minuten na de aanvraag (standaard 3,5,10,20)")
     p.add_argument("--sync-interval", type=float, help="ook elke zoveel seconden een sync sturen, om te zien of die het abonnement in leven houdt")
 
-    p = add("refresh", "nagaan of vernieuwen direct wordt beantwoord en welk kenmerk daarna levert")
-    p.add_argument("--pauze", type=float, default=20.0, help="seconden tussen vernieuwingen (standaard 20)")
-    p.add_argument("--herhalingen", type=int, default=3, help="aantal vernieuwingen met hetzelfde kenmerk (standaard 3)")
+    p = add("refresh", "nagaan of opnieuw abonneren wordt beantwoord, met hetzelfde en met een nieuw kenmerk; apparaat aan")
+    p.add_argument("--rondes", type=int, default=6, help="aantal rondes van drie vensters (standaard 6)")
+    p.add_argument("--venster", type=float, default=3.0, help="seconden wachten op een antwoord (standaard 3)")
 
     add("second-client", "twee clients vanaf deze computer: wie krijgt de berichten, en wiens teller geldt")
     add("deregister", "nagaan of het apparaat afmelden en een reset respecteert")
@@ -204,7 +204,7 @@ def select(args: argparse.Namespace) -> Callable[[scenarios.Context], Awaitable[
     if command == "lapse":
         return lambda ctx: scenarios.lapse(ctx, checkpoints=args.controlepunten, sync_interval=args.sync_interval)
     if command == "refresh":
-        return lambda ctx: scenarios.refresh_test(ctx, pause=args.pauze, repeats=args.herhalingen)
+        return lambda ctx: scenarios.refresh_test(ctx, rounds=args.rondes, window=args.venster)
     if command == "second-client":
         return scenarios.second_client
     if command == "deregister":

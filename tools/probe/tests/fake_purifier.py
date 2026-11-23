@@ -72,6 +72,7 @@ class FakePurifier(asyncio.DatagramProtocol):
     def __init__(self) -> None:
         self.state: dict[str, Any] = dict(DEFAULT_STATE)
         # "immediate": a registration is answered at once.
+        # "new_token": only a registration with a token the device does not know yet is answered.
         # "on_change": it is answered only by the next change (push-on-change).
         self.answer_registration = "immediate"
         self.lapse_after: float | None = None  # observer expires unless re-registered
@@ -86,6 +87,7 @@ class FakePurifier(asyncio.DatagramProtocol):
         self.strict_counter = True
         self.global_counter = True  # one counter for all clients
         self.readonly_keys: set[str] = {"D03105", "D03137"}  # acked, then discarded
+        self.together_only_keys: set[str] = set()  # discarded unless the message carries more settings
         self.push_on_same_value = False
         self.corrupt_next_frames = 0  # NUL bytes with a valid digest
         self.drop_next_notifications = 0  # change notifications that get lost
@@ -226,8 +228,9 @@ class FakePurifier(asyncio.DatagramProtocol):
         if self.single_observer_per_ip:
             for other in [k for k in self.observers if k[0][0] == sender[0] and k != key]:
                 del self.observers[other]
+        known = key in self.observers
         self.observers[key] = {"registered": time.monotonic()}
-        if self.answer_registration == "immediate":
+        if self.answer_registration == "immediate" or (self.answer_registration == "new_token" and not known):
             self._send_frame(key, "status")
 
     def _handle_control(self, msg: Message, sender: tuple[str, int]) -> None:
@@ -247,8 +250,11 @@ class FakePurifier(asyncio.DatagramProtocol):
                 return
             self.counters[self._counter_key(sender)] = counter
         changed = False
+        settings = [key for key in desired if key not in ("CommandType", "DeviceId", "EnduserId")]
         for key, value in desired.items():
             if key in ("CommandType", "DeviceId", "EnduserId") or key in self.readonly_keys:
+                continue
+            if key in self.together_only_keys and len(settings) < 2:
                 continue
             if isinstance(value, str):
                 # Real firmware ignores string values, except "0".
