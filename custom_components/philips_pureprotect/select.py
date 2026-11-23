@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 from homeassistant.components.select import SelectEntity, SelectEntityDescription
 from homeassistant.const import EntityCategory
@@ -21,34 +21,48 @@ BRIGHTNESS_AUTO = 101
 LIGHT_OFF, LIGHT_AIR_QUALITY, LIGHT_AMBIENT = 0, 1, 2
 
 
+@dataclass(frozen=True)
+class Companion:
+    """A key that is written in the same message as a choice."""
+
+    key: str
+    value: int
+    # Only when the status shows one of these values for the key; None is always.
+    when_status_shows: frozenset[int] | None = None
+
+
 @dataclass(frozen=True, kw_only=True)
 class PureProtectSelectDescription(SelectEntityDescription):
     """A setting stored under one key, with a value per choice."""
 
     status_key: str
     choices: Mapping[str, int]
-    # What to send for a choice. The default is the one key with its value.
-    write_fn: Callable[[PureProtectCoordinator, int], dict[str, int]] | None = None
+    # What travels along with a choice, per choice. A command is confirmed
+    # only when the device reports every key that was sent, so each key here
+    # has to be one the device takes from the network.
+    companions: Mapping[str, tuple[Companion, ...]] = field(default_factory=dict)
 
 
-def _light_mode(coordinator: PureProtectCoordinator, mode: int) -> dict[str, int]:
-    """Write the light the way the Air+ app does.
-
-    Off is brightness 0 together with mode 0. Coming back from off needs a
-    brightness again, or the light would stay dark.
-    """
-    if mode == LIGHT_OFF:
-        return {Key.BRIGHTNESS: BRIGHTNESS_OFF, Key.LIGHT_MODE: LIGHT_OFF}
-    values = {Key.LIGHT_MODE: mode}
-    if coordinator.value(Key.BRIGHTNESS) == BRIGHTNESS_OFF:
-        values[Key.BRIGHTNESS] = BRIGHTNESS_AUTO
-    return values
-
-
-def _light_scene(coordinator: PureProtectCoordinator, scene: int) -> dict[str, int]:
-    """Choose a scene the way the Air+ app does: with the ambient light on, at automatic brightness."""
-    return {Key.LIGHT_SCENE: scene, Key.BRIGHTNESS: BRIGHTNESS_AUTO, Key.LIGHT_MODE: LIGHT_AMBIENT}
-
+# What the light selects send along. The Air+ app was seen to write the lamp
+# function and the brightness together (docs/metingen.md, measurements 6 and
+# 7); which of these the AC3220 takes from the network is for the
+# write-matrix measurement to tell, and related models ignore a brightness.
+# Until then as little as possible travels along. Change these tables when
+# the measurement is in.
+#
+# "Light: off" writes the lamp function alone. A light mode needs a
+# brightness only when the brightness is off, or the light would stay dark.
+_BRIGHTNESS_BACK_ON = (Companion(Key.BRIGHTNESS, BRIGHTNESS_AUTO, when_status_shows=frozenset({BRIGHTNESS_OFF})),)
+LIGHT_MODE_COMPANIONS: Mapping[str, tuple[Companion, ...]] = {
+    "off": (),
+    "air_quality": _BRIGHTNESS_BACK_ON,
+    "ambient": _BRIGHTNESS_BACK_ON,
+}
+# A scene is chosen the way the app does: with the ambient light on, at automatic brightness.
+_SCENE_AS_THE_APP = (Companion(Key.BRIGHTNESS, BRIGHTNESS_AUTO), Companion(Key.LIGHT_MODE, LIGHT_AMBIENT))
+LIGHT_SCENE_COMPANIONS: Mapping[str, tuple[Companion, ...]] = {
+    f"scene_{scene}": _SCENE_AS_THE_APP for scene in (1, 2, 3, 4)
+}
 
 SELECTS: tuple[PureProtectSelectDescription, ...] = (
     PureProtectSelectDescription(
@@ -56,7 +70,7 @@ SELECTS: tuple[PureProtectSelectDescription, ...] = (
         translation_key="light_mode",
         status_key=Key.LIGHT_MODE,
         choices={"off": LIGHT_OFF, "air_quality": LIGHT_AIR_QUALITY, "ambient": LIGHT_AMBIENT},
-        write_fn=_light_mode,
+        companions=LIGHT_MODE_COMPANIONS,
     ),
     PureProtectSelectDescription(
         key="light_brightness",
@@ -69,7 +83,7 @@ SELECTS: tuple[PureProtectSelectDescription, ...] = (
         translation_key="light_scene",
         status_key=Key.LIGHT_SCENE,
         choices={"scene_1": 1, "scene_2": 2, "scene_3": 3, "scene_4": 4},
-        write_fn=_light_scene,
+        companions=LIGHT_SCENE_COMPANIONS,
     ),
     PureProtectSelectDescription(
         key="timer",
@@ -109,10 +123,11 @@ class PureProtectSelect(PureProtectEntity, SelectEntity):
         return next((name for name, number in self.entity_description.choices.items() if number == value), None)
 
     async def async_select_option(self, option: str) -> None:
-        """Send the choice to the device."""
+        """Send the choice to the device, with what has to travel along."""
         description = self.entity_description
-        value = description.choices[option]
-        values = (
-            description.write_fn(self.coordinator, value) if description.write_fn else {description.status_key: value}
-        )
+        values = {description.status_key: description.choices[option]}
+        for companion in description.companions.get(option, ()):
+            shown = companion.when_status_shows
+            if shown is None or self.coordinator.value(companion.key) in shown:
+                values[companion.key] = companion.value
         await self.coordinator.async_write(values)

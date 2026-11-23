@@ -530,8 +530,8 @@ Het programma voert deze reeks uit:
 |---|---|---|---|
 | 0 | Snelle controle uit 7.1 | Firmware, sleutelset en werkende schrijfopdrachten van jouw apparaat | Gedaan met het meetprogramma |
 | 1 | Meetprogramma bouwen en de reeks uit 7.2 draaien | Ontwerpkeuzes vastgelegd; de kern van de protocollaag bestaat | Programma klaar. Elf metingen gedaan, zie [metingen.md](metingen.md); daar staat ook wat nog open is |
-| 2 | Protocol- en sessiepakket met nagebootst apparaat en tests | Betrouwbare verbinding, los van Home Assistant te testen | Klaar en door drie controleurs nagelopen; 133 tests. Nog niet tegen het echte apparaat gedraaid |
-| 3 | Minimale integratie: instellen met IP-adres, coordinator, ventilator en sensoren | Werkend in je eigen Home Assistant | Geschreven, samen met stap 4; 41 tests in Home Assistant 2026.11. Nog niet in je eigen Home Assistant gedraaid |
+| 2 | Protocol- en sessiepakket met nagebootst apparaat en tests | Betrouwbare verbinding, los van Home Assistant te testen | Klaar en door drie controleurs nagelopen; 154 tests. Nog niet tegen het echte apparaat gedraaid |
+| 3 | Minimale integratie: instellen met IP-adres, coordinator, ventilator en sensoren | Werkend in je eigen Home Assistant | Geschreven, samen met stap 4. Door vier controleurs nagelopen, de bewezen fouten opgelost en dat onafhankelijk nagecontroleerd; 116 tests in Home Assistant 2026.11. Nog niet in je eigen Home Assistant gedraaid |
 | 4 | Overige entiteiten, diagnostiek, DHCP-herkenning, herconfiguratie, vertalingen | Volledige functionaliteit | Entiteiten, diagnostiek, herconfiguratie en vertalingen zijn er. Nog niet: DHCP-herkenning, zoeken in het netwerk, knoppen voor de filtertellers |
 | 5 | Duurtest van één tot twee weken op je eigen apparaat, met de diagnostiektellers | Aantoonbaar stabiel | Nog niet begonnen |
 | 6 | Eerste release met installatielink; kleine verbeteringen aanbieden bij de bestaande projecten | Publiek beschikbaar | Nog niet begonnen |

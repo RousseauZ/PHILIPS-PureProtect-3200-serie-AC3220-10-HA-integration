@@ -19,10 +19,9 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
-from homeassistant.util import dt as dt_util
 
-from .const import Key
-from .coordinator import PureProtectConfigEntry, PureProtectCoordinator
+from .const import LEVEL_TO_SPEED, Key
+from .coordinator import PureProtectConfigEntry, PureProtectCoordinator, moment
 from .entity import PureProtectEntity, add_when_reported
 
 PARALLEL_UPDATES = 0
@@ -37,6 +36,9 @@ class PureProtectSensorDescription(SensorEntityDescription):
 
     needs: tuple[str, ...]
     value_fn: Callable[[PureProtectCoordinator], StateType]
+    # True for what the purifier measures itself. Off, it measures nothing
+    # and reports nothing, unless "sensors in standby" is on.
+    measured: bool = False
 
 
 def _raw(key: str) -> Callable[[PureProtectCoordinator], StateType]:
@@ -56,6 +58,13 @@ def _filter_life(coordinator: PureProtectCoordinator) -> StateType:
     return min(100, max(0, math.ceil(left * 100 / total)))
 
 
+def _fan_speed(coordinator: PureProtectCoordinator) -> StateType:
+    """Return how hard the fan runs, as a step from 1 to 5; 0 while the purifier is off."""
+    if coordinator.value(Key.POWER) == 0:
+        return 0
+    return LEVEL_TO_SPEED.get(coordinator.value(Key.FAN_LEVEL))  # type: ignore[arg-type]
+
+
 SENSORS: tuple[PureProtectSensorDescription, ...] = (
     PureProtectSensorDescription(
         key="pm25",
@@ -64,6 +73,7 @@ SENSORS: tuple[PureProtectSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfDensity.MICROGRAMS_PER_CUBIC_METER,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=_raw(Key.PM25),
+        measured=True,
     ),
     PureProtectSensorDescription(
         key="allergen_index",
@@ -71,6 +81,7 @@ SENSORS: tuple[PureProtectSensorDescription, ...] = (
         needs=(Key.ALLERGEN_INDEX,),
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=_raw(Key.ALLERGEN_INDEX),
+        measured=True,
     ),
     PureProtectSensorDescription(
         key="temperature",
@@ -80,6 +91,7 @@ SENSORS: tuple[PureProtectSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
         value_fn=_temperature,
+        measured=True,
     ),
     PureProtectSensorDescription(
         key="humidity",
@@ -88,6 +100,7 @@ SENSORS: tuple[PureProtectSensorDescription, ...] = (
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=_raw(Key.HUMIDITY),
+        measured=True,
     ),
     PureProtectSensorDescription(
         key="filter_life",
@@ -124,13 +137,14 @@ SENSORS: tuple[PureProtectSensorDescription, ...] = (
         entity_registry_enabled_default=False,
         value_fn=_raw(Key.ERROR_CODE),
     ),
+    # How hard the purifier works, which the fan entity does not show in auto
+    # and sleep. The key is part of the unique id and stays what it was.
     PureProtectSensorDescription(
         key="fan_level",
-        translation_key="fan_level",
+        translation_key="fan_speed",
         needs=(Key.FAN_LEVEL,),
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
-        value_fn=_raw(Key.FAN_LEVEL),
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=_fan_speed,
     ),
 )
 
@@ -162,8 +176,20 @@ class PureProtectSensor(PureProtectEntity, SensorEntity):
 
     @property
     def native_value(self) -> StateType:
-        """Return the value the device last reported."""
-        return self.entity_description.value_fn(self.coordinator)
+        """Return the value the device last reported; None for a reading while nothing is measured.
+
+        A purifier that is off keeps its last readings to itself for hours.
+        Shown as current, they would draw a flat line that was never
+        measured, and an automation on them could never fire.
+        """
+        coordinator = self.coordinator
+        if (
+            self.entity_description.measured
+            and coordinator.value(Key.POWER) == 0
+            and coordinator.value(Key.STANDBY_SENSORS) != 1
+        ):
+            return None
+        return self.entity_description.value_fn(coordinator)
 
 
 class _SteadyTimestampSensor(PureProtectEntity, SensorEntity):
@@ -207,8 +233,7 @@ class LastStatusSensor(_SteadyTimestampSensor):
         super().__init__(coordinator, "last_status")
 
     def _moment(self) -> datetime | None:
-        received = self.coordinator.session.last_frame_at
-        return None if received is None else dt_util.utc_from_timestamp(received)
+        return moment(self.coordinator.session.last_frame_at)
 
 
 class TimerEndSensor(_SteadyTimestampSensor):
@@ -222,7 +247,7 @@ class TimerEndSensor(_SteadyTimestampSensor):
 
     def _moment(self) -> datetime | None:
         minutes = self.coordinator.value(Key.TIMER_MINUTES_LEFT)
-        received = self.coordinator.session.last_frame_at
+        received = moment(self.coordinator.session.last_frame_at)
         if not minutes or received is None or not self.coordinator.value(Key.POWER):
             return None
-        return dt_util.utc_from_timestamp(received) + timedelta(minutes=minutes)
+        return received + timedelta(minutes=minutes)

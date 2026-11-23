@@ -57,6 +57,7 @@ FAST = SessionOptions(
     info_timeout=0.25,
     info_attempts=2,
     request_status_timeout=0.3,
+    standby_presume_after=0.5,
     socket_timeout=1.0,
     error_pause=0.05,
 )

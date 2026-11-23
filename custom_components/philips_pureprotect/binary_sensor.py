@@ -48,6 +48,7 @@ BINARY_SENSORS: tuple[PureProtectBinarySensorDescription, ...] = (
     ),
     PureProtectBinarySensorDescription(
         key="problem",
+        translation_key="fault",
         status_key=Key.ERROR_CODE,
         device_class=BinarySensorDeviceClass.PROBLEM,
         entity_category=EntityCategory.DIAGNOSTIC,

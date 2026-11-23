@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -33,6 +36,8 @@ from .const import (
     LOGGER,
     MANUFACTURER,
     SAVE_DELAY,
+    SAVE_INTERVAL,
+    SAVED_SOON,
     STORAGE_VERSION,
     Key,
 )
@@ -41,6 +46,24 @@ type PureProtectConfigEntry = ConfigEntry[PureProtectCoordinator]
 
 # The timings of the session; the tests replace them with fast ones.
 SESSION_OPTIONS = SessionOptions()
+# A setting that is refused because the purifier is off is tried once more
+# after this many seconds; see PureProtectCoordinator.async_write.
+DEVICE_OFF_RETRY_DELAY = 0.5
+
+
+def status_store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]:
+    """Return the file that keeps the last status of one purifier."""
+    return Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}", atomic_writes=True)
+
+
+def moment(timestamp: float | None) -> datetime | None:
+    """Return a time of receipt as a moment; None when it is none."""
+    if timestamp is None:
+        return None
+    try:
+        return datetime.fromtimestamp(timestamp, UTC)
+    except (OverflowError, OSError, ValueError):
+        return None  # a number from a damaged file
 
 
 class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -62,7 +85,12 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.keys: frozenset[str] = frozenset()
         # True while the keys are the ones of the model, not ones the device reported.
         self.keys_assumed = False
-        self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
+        self._store = status_store(hass, entry.entry_id)
+        # When the pending write of the status is due (loop time); None without one.
+        self._save_due: float | None = None
+        # What the file holds: the values of _kept() and the time of its status.
+        self._saved_kept: tuple[Any, ...] | None = None
+        self._saved_frame_at: float | None = None
         self._issue_shown = False
         self._registered_versions: tuple[Any, Any] = (None, None)
         self.data = {}
@@ -70,8 +98,14 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_start(self) -> None:
         """Load the saved status and start the session; never waits for the device."""
         entry = self.config_entry
-        stored = await self._store.async_load()
+        stored: Any = None
+        try:
+            stored = await self._store.async_load()
+        except Exception as err:  # noqa: BLE001 - the file is a cache: the purifier sends its status again
+            LOGGER.warning("The stored status of %s cannot be read and is left out: %s", entry.title, err)
         restored = RestoredState.from_dict(stored) if isinstance(stored, Mapping) else None
+        if restored is not None and moment(restored.received_at) is None:
+            restored = dataclasses.replace(restored, received_at=None)
         self.session = Session(
             self.host,
             port=entry.data.get(CONF_PORT, DEFAULT_PORT),
@@ -79,10 +113,12 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             expected_device_id=self.device_id,
             restored=restored,
         )
-        self.data = self.session.status or {}
+        self.data = self._shown_status()
         self.keys = self.session.snapshot().keys
         if not self.keys:
             self.keys, self.keys_assumed = DEFAULT_KEYS, True
+        if self.session.status is not None:
+            self._saved_kept, self._saved_frame_at = self._kept(), self.session.last_frame_at
         entry.async_on_unload(self.session.add_listener(self._handle_session_update))
         await self.session.start()
 
@@ -91,6 +127,14 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.session.stop()
         if self.session.status is not None:
             await self._store.async_save(self._data_to_save())
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Answer a request to refresh, such as homeassistant.update_entity, with what is known.
+
+        Nothing is asked of the purifier: it reports every change by itself,
+        and in standby it would not answer.
+        """
+        return self._shown_status()
 
     @property
     def available(self) -> bool:
@@ -115,6 +159,17 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         value = self.data.get(key)
         return value if isinstance(value, int) and not isinstance(value, bool) else None
 
+    def _shown_status(self) -> dict[str, Any]:
+        """Return the status for the entities.
+
+        A purifier that never sent a status and is presumed to be in standby
+        is shown as off, with everything else unknown.
+        """
+        status = self.session.status
+        if status is not None:
+            return status
+        return {Key.POWER: 0} if self.session.presumed_standby else {}
+
     @callback
     def _handle_session_update(self) -> None:
         """Take over a new status or a new session state."""
@@ -123,10 +178,9 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.keys = frozenset(status) if self.keys_assumed else self.keys | frozenset(status)
             self.keys_assumed = False
         self._update_issue()
-        self.async_set_updated_data(status)
+        self.async_set_updated_data(self._shown_status())
         self._update_device()
-        if self.session.status is not None:
-            self._store.async_delay_save(self._data_to_save, SAVE_DELAY)
+        self._schedule_save()
 
     @callback
     def _update_device(self) -> None:
@@ -141,8 +195,43 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._registered_versions = versions
         registry.async_update_device(device.id, model=versions[0], sw_version=versions[1])
 
+    # -- the stored status -------------------------------------------------
+
+    def _kept(self) -> tuple[Any, ...]:
+        """Return what a restart should bring back as it is now: the keys, the state and the settings."""
+        status = self.session.status or {}
+        return (self.keys, *(status.get(key) for key in SAVED_SOON))
+
+    @callback
+    def _schedule_save(self) -> None:
+        """Have the status written: soon after a change that matters, otherwise once in a long while.
+
+        One write is pending at most, and a later status never postpones it.
+        Without a new status since the last write nothing is written at all,
+        so a purifier in standby costs no disk writes.
+        """
+        if self.session.status is None:
+            return
+        if self._kept() != self._saved_kept:
+            delay: float = SAVE_DELAY
+        elif self.session.last_frame_at != self._saved_frame_at:
+            delay = SAVE_INTERVAL
+        else:
+            return
+        due = self.hass.loop.time() + delay
+        if self._save_due is not None and self._save_due <= due:
+            return
+        self._save_due = due
+        # An earlier moment replaces the pending one; this is never called with a later one.
+        self._store.async_delay_save(self._data_to_save, delay)
+
     def _data_to_save(self) -> dict[str, Any]:
+        """Return the status for the file; called at the moment it is written."""
+        self._save_due = None
+        self._saved_kept, self._saved_frame_at = self._kept(), self.session.last_frame_at
         return self.session.snapshot().as_dict()
+
+    # -- another device at the address -------------------------------------
 
     @callback
     def _update_issue(self) -> None:
@@ -170,12 +259,23 @@ class PureProtectCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Remove the repair issue of this purifier."""
         ir.async_delete_issue(self.hass, DOMAIN, f"wrong_device_{self.config_entry.entry_id}")
 
+    # -- commands ----------------------------------------------------------
+
     async def async_write(self, values: Mapping[str, int]) -> None:
         """Send values to the purifier and wait until it reports them."""
         if self.session.identity_mismatch:
             raise self._error("wrong_device")
         try:
-            await self.session.write(values)
+            try:
+                await self.session.write(values)
+            except DeviceOffError:
+                # A scene applies its entities at the same time, and may name
+                # a setting before the fan that switches the purifier on. A
+                # moment later that switch-on is under way, and the session
+                # holds the setting back until it is confirmed. A purifier
+                # that really is off is reported that moment later.
+                await asyncio.sleep(DEVICE_OFF_RETRY_DELAY)
+                await self.session.write(values)
         except DeviceOffError as err:
             raise self._error("device_off") from err
         except RefusedError as err:

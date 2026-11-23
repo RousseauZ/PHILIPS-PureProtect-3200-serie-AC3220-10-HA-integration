@@ -79,7 +79,10 @@ def test_matching_restored_status_does_not_count_as_already_current(bench: Bench
         await asyncio.sleep(0.05)
         assert session.state is REACHABLE and not session.status_is_live
         # Rule 6: only a status of this session may stand in for the frame.
-        result = await session.write({"D03103": 0})  # what the restored status already says
+        # Shown with the power key, which is what "switch on" writes whatever
+        # the status says; a setting would first wait for the answer to the
+        # registration (see test_presumed_standby.py).
+        result = await session.write({"D03102": 1})  # what the restored status already says
         assert not result.already_current, "a restored value is not proof of what the device has now"
         assert session.status_is_live, "the write was confirmed by a frame"
 

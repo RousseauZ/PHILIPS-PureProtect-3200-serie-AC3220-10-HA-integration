@@ -8,3 +8,9 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
+
+[tool.ruff.lint.per-file-ignores]
+# Both carry a "noqa" for a rule that this version of ruff does not select by default, which it reports
+# as unused. crypto.py has to stay byte-identical with tools/probe, so the comments stay as they are.
+"custom_components/philips_pureprotect/airlink/crypto.py" = ["RUF100"]
+"custom_components/philips_pureprotect/airlink/transport.py" = ["RUF100"]

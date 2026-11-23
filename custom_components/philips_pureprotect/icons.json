@@ -29,7 +29,7 @@
       "error_code": {
         "default": "mdi:alert-circle-outline"
       },
-      "fan_level": {
+      "fan_speed": {
         "default": "mdi:fan"
       },
       "last_status": {

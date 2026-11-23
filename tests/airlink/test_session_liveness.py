@@ -530,6 +530,12 @@ def test_options_reject_nonsense() -> None:
     assert (defaults.sync_timeout, defaults.control_timeout, defaults.write_attempts) == (1.5, 2.0, 3)
     assert (defaults.write_budget, defaults.confirm_settle, defaults.confirm_timeout) == (10.0, 2.0, 5.0)
     assert defaults.confirm_retry_wait == 3.0 and defaults.runtime_stale_window_ms == 10_000
+    # Standby is presumed well after the 1.9 s a device that is on may take to answer a registration,
+    # after the second registration of a start had that time too, and within the limit of a write.
+    assert defaults.standby_presume_after == 10.0
+    assert defaults.refresh_min_gap + 2 * 1.9 <= defaults.standby_presume_after <= defaults.write_budget
+    with pytest.raises(ValueError, match="standby_presume_after"):
+        SessionOptions(standby_presume_after=0)
 
 
 def test_device_that_is_on_answers_the_registration(bench: Bench) -> None:

@@ -7,14 +7,9 @@ from typing import Any
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.setup import async_setup_component
 
-from .conftest import until
-
-
-def state(hass: HomeAssistant, entity_id: str) -> str:
-    found = hass.states.get(entity_id)
-    assert found is not None, f"{entity_id} does not exist"
-    return found.state
+from .conftest import measured_delays, state, until
 
 
 async def switch(hass: HomeAssistant, name: str, on: bool) -> None:
@@ -61,32 +56,105 @@ async def test_a_setting_is_refused_while_the_purifier_is_off(hass: HomeAssistan
     assert state(hass, "switch.woonkamer_child_lock") == "off"
 
 
-async def test_light_is_written_the_way_the_app_does(hass: HomeAssistant, fake, setup) -> None:
+@pytest.mark.parametrize(
+    "order", [("switch.woonkamer_child_lock", "fan.woonkamer"), ("fan.woonkamer", "switch.woonkamer_child_lock")]
+)
+async def test_a_scene_can_switch_on_and_change_a_setting_in_any_order(
+    hass: HomeAssistant, fake, setup, order: tuple[str, str]
+) -> None:
+    measured_delays(fake)
+    await setup()
+    assert await async_setup_component(hass, "scene", {})
+    await hass.async_block_till_done()
+    await hass.services.async_call("fan", "turn_off", {"entity_id": "fan.woonkamer"}, blocking=True)
+    assert state(hass, "fan.woonkamer") == "off" and state(hass, "switch.woonkamer_child_lock") == "off"
+    # Home Assistant loads the code that applies a scene to a domain on first use, which takes a moment
+    # and shuffles the order once. A scene that changes nothing gets that out of the way.
+    nothing = {"switch.woonkamer_child_lock": "off", "fan.woonkamer": "off"}
+    await hass.services.async_call("scene", "apply", {"entities": nothing}, blocking=True)
+    sent = len(fake.controls)
+
+    # Home Assistant applies the domains of a scene at the same time, in the order in which they first
+    # appear. With the setting first it finds the purifier off; a moment later the switch-on is under way.
+    await hass.services.async_call("scene", "apply", {"entities": dict.fromkeys(order, "on")}, blocking=True)
+
+    await until(hass, lambda: fake.is_on and fake.state["D03103"] == 1, "the scene was not applied", timeout=2.0)
+    assert fake.controls[sent:] == [{"D03102": 1}, {"D03103": 1}]
+    assert state(hass, "switch.woonkamer_child_lock") == "on"
+
+
+async def test_what_the_light_selects_send(hass: HomeAssistant, fake, setup) -> None:
     # Whether the AC3220 takes brightness and scene from the network is still to be
     # measured; this test is about what is sent, on a device that takes them.
     fake.readonly_keys = set()
     await setup()
     last: Any = lambda: fake.controls[-1]
 
+    # Off is the lamp function alone, so that it is confirmed on a key that related models do take.
     await select(hass, "light", "off")
-    assert last() == {"D03105": 0, "D03135": 0}
+    assert last() == {"D03135": 0}
     assert state(hass, "select.woonkamer_light") == "off"
-    # Brightness 0 has no name of its own: the light is off.
-    assert state(hass, "select.woonkamer_light_brightness") == "unknown"
+    assert state(hass, "select.woonkamer_light_brightness") == "auto"  # left as it was
 
-    # Back on needs a brightness again.
+    # Back on is the lamp function alone as well, while there is a brightness.
     await select(hass, "light", "air_quality")
-    assert last() == {"D03135": 1, "D03105": 101}
+    assert last() == {"D03135": 1}
     await select(hass, "light", "ambient")
     assert last() == {"D03135": 2}
 
     await select(hass, "light_brightness", "low")
     assert last() == {"D03105": 115} and state(hass, "select.woonkamer_light_brightness") == "low"
 
+    # The Air+ app switches the light off with brightness 0 as well (measurements 6 and 7).
+    fake.change("D03105", 0)
+    fake.change("D03135", 0)
+    await until(hass, lambda: state(hass, "select.woonkamer_light") == "off")
+    # Brightness 0 has no name of its own: the light is off.
+    assert state(hass, "select.woonkamer_light_brightness") == "unknown"
+    # Coming back from that needs a brightness again, or the light would stay dark.
+    await select(hass, "light", "air_quality")
+    assert last() == {"D03135": 1, "D03105": 101}
+    assert state(hass, "select.woonkamer_light_brightness") == "auto"
+
+    # A scene is chosen the way the app does: with the ambient light on, at automatic brightness.
+    await select(hass, "light_brightness", "low")
     await select(hass, "ambient_light_scene", "scene_2")
     assert last() == {"D03137": 2, "D03105": 101, "D03135": 2}
     assert state(hass, "select.woonkamer_ambient_light_scene") == "scene_2"
     assert state(hass, "select.woonkamer_light_brightness") == "auto"
+    assert state(hass, "select.woonkamer_light") == "ambient"
+
+
+async def test_light_off_succeeds_on_a_device_that_does_not_take_a_brightness(hass: HomeAssistant, fake, setup) -> None:
+    # What the nearest relative was seen to do (docs/onderzoek.md, appendix A: D03105 is read-only on an
+    # AC4220/12, where D03135 does work): a brightness is answered "success" and discarded.
+    fake.readonly_keys = {"D03105"}
+    await setup()
+    assert state(hass, "select.woonkamer_light") == "ambient"
+
+    await select(hass, "light", "off")
+
+    assert fake.state["D03135"] == 0 and state(hass, "select.woonkamer_light") == "off"
+    await select(hass, "light", "air_quality")
+    assert fake.state["D03135"] == 1 and state(hass, "select.woonkamer_light") == "air_quality"
+
+
+async def test_every_choice_is_written_as_the_value_of_the_device(hass: HomeAssistant, fake, setup) -> None:
+    fake.readonly_keys = set()  # a device that takes brightness and scene from the network
+    await setup()
+    expected = {
+        "light": ("D03135", {"off": 0, "air_quality": 1, "ambient": 2}),
+        "light_brightness": ("D03105", {"auto": 101, "low": 115, "bright": 123}),
+        "ambient_light_scene": ("D03137", {"scene_1": 1, "scene_2": 2, "scene_3": 3, "scene_4": 4}),
+        "timer": ("D03110", {"off": 0} | {f"hours_{hours}": hours + 1 for hours in range(1, 13)}),
+    }
+    for name, (key, choices) in expected.items():
+        entity_id = f"select.woonkamer_{name}"
+        assert hass.states.get(entity_id).attributes["options"] == list(choices)
+        for option, value in choices.items():
+            await select(hass, name, option)
+            assert fake.state[key] == value, f"{name}: {option}"
+            assert state(hass, entity_id) == option
 
 
 async def test_timer_counts_from_two(hass: HomeAssistant, fake, setup) -> None:

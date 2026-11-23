@@ -248,6 +248,8 @@ def test_cancelled_start_and_cancelled_stop_leave_nothing_behind(bench: Bench, m
         await session.start()
         await bench.until(lambda: session.available)
         assert len(set(bench.fake.registrations)) == 1
+        # The registration is answered: from here a setting is sent at once.
+        await bench.until(lambda: session.status_is_live)
 
         # ...and a stop() that is cancelled half-way still ends everything.
         hang = True
