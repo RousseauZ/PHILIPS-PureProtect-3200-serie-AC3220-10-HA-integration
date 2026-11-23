@@ -21,7 +21,7 @@ from typing import Any
 from .coap import EMPTY, CoapError, Message, MType, code_class
 from .errors import TransportError
 
-_LOGGER = logging.getLogger("airlink")
+_LOGGER = logging.getLogger(__package__)  # see session.py
 
 Addr = tuple[str, int]
 StreamCallback = Callable[[Message], None]
