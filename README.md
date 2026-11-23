@@ -35,9 +35,10 @@ Lezen en bedienen zijn voor alle entiteiten op een echte AC3220/10 gemeten. Alle
 
 De integratie heeft geen internet nodig: ze praat alleen met de luchtreiniger in je eigen netwerk. Wil je dat er geen gegevens het huis uit gaan, blokkeer dan het internet van de luchtreiniger.
 
-1. **Kijk eerst waarmee hij praat.** In AdGuard Home of je router: het DNS-logboek, gefilterd op het adres van de luchtreiniger. Volgens het onderzoek gaat het om de servers van Philips (`www.api.air.philips.com`) en een AWS-server in Frankfurt (`…iot.eu-central-1.amazonaws.com`); op dit model is dat nog niet gemeten.
-2. **Blokkeer al het internetverkeer van de luchtreiniger in je router of firewall**, op IP- of MAC-adres. Alleen DNS blokkeren is niet genoeg: een apparaat kan een vaste DNS-server of vaste adressen gebruiken. Verkeer binnen je netwerk tussen Home Assistant en de luchtreiniger (UDP-poort 5683) moet blijven werken.
-3. **Controleer het resultaat in Home Assistant**, onder Diagnose op de apparaatpagina:
+1. **Kijk waarmee hij praat.** Gemeten op een AC3220/10 (docs/metingen.md, meting 18): vier servers van Amazon, voor de cloudverbinding (AWS IoT in Frankfurt), een REST-dienst en de opslag van firmware-updates.
+2. **Blokkeer al het internetverkeer van de luchtreiniger in je router of firewall**, op IP- of MAC-adres. Alleen DNS blokkeren is niet genoeg: een apparaat kan een vaste DNS-server of vaste adressen gebruiken. Verkeer binnen je netwerk tussen Home Assistant en de luchtreiniger (UDP-poort 5683) moet blijven werken. Gebruik je AdGuard Home, zet het adres van de luchtreiniger dan ook bij Instellingen → DNS-instellingen → Toegangsinstellingen → Niet-toegestane clients.
+3. **Haal daarna de stekker er tien seconden uit.** Het apparaat houdt zijn verbinding met de cloud open; een blokkade verbreekt een bestaande verbinding niet altijd.
+4. **Controleer het resultaat in Home Assistant**, onder Diagnose op de apparaatpagina:
    - "Cloudverbinding" hoort niet langer "Online" te zeggen.
    - Bediening en sensoren werken gewoon door.
    - "Laatst opgestart" blijft staan. Springt die steeds naar nu, dan herstart de wifi-module zichzelf omdat hij de cloud mist; meld dat.
