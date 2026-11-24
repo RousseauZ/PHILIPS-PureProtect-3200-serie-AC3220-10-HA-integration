@@ -79,7 +79,7 @@ async def test_an_info_answer_is_often_lost_and_asked_again(hass: HomeAssistant,
 
 async def test_something_else_answers(hass: HomeAssistant, fake, default_port: int) -> None:
     # Measured: a television on the same network answers on this port, without ids.
-    fake._handle_info = lambda msg, sender: fake._respond(msg, sender, b'{"name":"[LG] webOS TV","swversion":"1.0"}')
+    fake._handle_info = lambda msg, sender: fake._respond(msg, sender, b'{"name":"Television","swversion":"1.0"}')
     result = await submit(hass, await start(hass), "127.0.0.1")
     assert result["type"] is FlowResultType.FORM and result["errors"] == {"base": "not_a_purifier"}
 

@@ -2,6 +2,10 @@
 
 Elke versie hieronder wordt een release op GitHub zodra ze in `main` staat, en HACS biedt haar aan als update.
 
+## Niet uitgebracht
+
+- Voorbeeldadressen en onderzoeksnotities zonder echte netwerk- of apparaatgegevens, en GitHub Actions vastgezet op een vaste versie.
+
 ## 0.2.0
 
 - **Automatisch vinden.** Bij het toevoegen kan Home Assistant de luchtreiniger in je netwerk zoeken. Een nieuwe luchtreiniger wordt via DHCP herkend en aangeboden. Krijgt je luchtreiniger een ander adres, dan volgt de integratie dat: via DHCP, of door hem zelf te zoeken als hij een minuut of vijf niet antwoordt op het oude adres, of als daar een ander apparaat antwoordt. Gezocht en aangeboden wordt alleen de AC3220; een ander model kun je nog met zijn adres toevoegen, maar dat is niet getest.

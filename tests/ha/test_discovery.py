@@ -331,7 +331,7 @@ async def test_an_offer_the_owner_opened_is_left_alone(
 
 @pytest.mark.parametrize(
     ("answer", "reason"),
-    [(None, "cannot_connect"), (b'{"name":"[LG] webOS TV"}', "not_a_purifier")],
+    [(None, "cannot_connect"), (b'{"name":"Television"}', "not_a_purifier")],
 )
 async def test_dhcp_lets_another_appliance_with_the_same_wifi_module_go(
     hass: HomeAssistant, fake, default_port: int, answer: bytes | None, reason: str
@@ -478,22 +478,22 @@ def test_the_neighbour_table_gives_only_a_complete_real_mac(tmp_path, monkeypatc
     table = tmp_path / "arp"
     table.write_text(
         "IP address       HW type     Flags       HW address            Mask     Device\n"
-        "10.10.10.113     0x1         0x2         68:79:C4:12:34:56     *        eth0\n"
-        "10.10.10.68      0x1         0x0         00:00:00:00:00:00     *        eth0\n"
-        "10.10.10.70      0x1         0x2         00:00:00:00:00:00     *        eth0\n"
-        "10.10.10.80      0x1         0x2         02:aa:bb:cc:dd:ee     *        eth0\n"
-        "10.10.10.81      0x1         0x2         02:AA:BB:CC:DD:EE     *        eth0\n"
-        "10.10.10.90      0x1         0x0         68:79:c4:12:34:56     *        eth0\n"
+        "192.0.2.113      0x1         0x2         68:79:C4:12:34:56     *        eth0\n"
+        "192.0.2.68       0x1         0x0         00:00:00:00:00:00     *        eth0\n"
+        "192.0.2.70       0x1         0x2         00:00:00:00:00:00     *        eth0\n"
+        "192.0.2.80       0x1         0x2         02:aa:bb:cc:dd:ee     *        eth0\n"
+        "192.0.2.81       0x1         0x2         02:AA:BB:CC:DD:EE     *        eth0\n"
+        "192.0.2.90       0x1         0x0         68:79:c4:12:34:56     *        eth0\n"
     )
     monkeypatch.setattr(search_module, "ARP_TABLE", table)
-    assert READ_MAC("10.10.10.113") == MAC  # an incomplete entry with the same MAC does not count
-    assert READ_MAC("10.10.10.68") is None  # not complete
-    assert READ_MAC("10.10.10.70") is None  # all zeros merged devices in another integration
-    assert READ_MAC("10.10.10.80") is None  # one MAC for two addresses: a repeater answering for both
-    assert READ_MAC("10.10.10.1") is None
+    assert READ_MAC("192.0.2.113") == MAC  # an incomplete entry with the same MAC does not count
+    assert READ_MAC("192.0.2.68") is None  # not complete
+    assert READ_MAC("192.0.2.70") is None  # all zeros merged devices in another integration
+    assert READ_MAC("192.0.2.80") is None  # one MAC for two addresses: a repeater answering for both
+    assert READ_MAC("192.0.2.1") is None
     assert READ_MAC("woonkamer.lan") is None  # a host name is not looked up
     monkeypatch.setattr(search_module, "ARP_TABLE", tmp_path / "missing")
-    assert READ_MAC("10.10.10.113") is None
+    assert READ_MAC("192.0.2.113") is None
 
 
 # -- a new address after a move --------------------------------------------------------------------

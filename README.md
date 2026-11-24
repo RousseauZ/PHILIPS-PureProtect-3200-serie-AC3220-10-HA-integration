@@ -41,7 +41,7 @@ Lezen en bedienen zijn voor alle entiteiten op een echte AC3220/10 gemeten. Alle
 De integratie heeft geen internet nodig: ze praat alleen met de luchtreiniger in je eigen netwerk. Wil je dat er geen gegevens het huis uit gaan, blokkeer dan het internet van de luchtreiniger.
 
 1. **Kijk waarmee hij praat.** Gemeten op een AC3220/10 (docs/metingen.md, meting 18): vier servers van Amazon, voor de cloudverbinding (AWS IoT in Frankfurt), een REST-dienst en de opslag van firmware-updates.
-2. **Blokkeer al het internetverkeer van de luchtreiniger in je router of firewall**, op IP- of MAC-adres. Alleen DNS blokkeren is niet genoeg: een apparaat kan een vaste DNS-server of vaste adressen gebruiken. Verkeer binnen je netwerk tussen Home Assistant en de luchtreiniger (UDP-poort 5683) moet blijven werken. Gebruik je AdGuard Home, zet het adres van de luchtreiniger dan ook bij Instellingen → DNS-instellingen → Toegangsinstellingen → Niet-toegestane clients.
+2. **Blokkeer al het internetverkeer van de luchtreiniger in je router of firewall**, op IP- of MAC-adres. Alleen DNS blokkeren is niet genoeg: een apparaat kan een vaste DNS-server of vaste adressen gebruiken. Verkeer binnen je netwerk tussen Home Assistant en de luchtreiniger (UDP-poort 5683) moet blijven werken. Kan je DNS-resolver clients blokkeren, zet het adres van de luchtreiniger dan ook op de lijst met geblokkeerde clients.
 3. **Haal daarna de stekker er tien seconden uit.** Het apparaat houdt zijn verbinding met de cloud open; een blokkade verbreekt een bestaande verbinding niet altijd.
 4. **Controleer het resultaat in Home Assistant**, onder Diagnose op de apparaatpagina:
    - "Cloudverbinding" hoort niet langer "Online" te zeggen.
@@ -112,7 +112,7 @@ De knop "Filter reinigen" vraagt eerst om bevestiging, zodat je de teller niet p
 
 ```bash
 cd tools/probe && . venv/bin/activate
-python ../session_check.py 10.10.10.113 --set D03103=1 --set D03103=0
+python ../session_check.py 192.0.2.113 --set D03103=1 --set D03103=0
 ```
 
 ## Ontwikkelen

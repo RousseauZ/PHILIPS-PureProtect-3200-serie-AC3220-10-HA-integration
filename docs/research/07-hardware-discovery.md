@@ -141,13 +141,13 @@ Unicast or broadcast, plaintext, no sync needed. Samples:
 | Device / firmware | How | Payload | Source |
 |---|---|---|---|
 | AC3858/50, `Ms4102` (2020) | captured from the app, then replayed | `{"product_id":"<cut>","device_id":"<cut>","name":"Living Room","type":"AC3858","modelid":"AC3858/50","swversion":"Ms4102","option":"1"}` | HA #110 [V-forum `t53030_all.txt:1366`] |
-| AC2939/10, `Ms2106` (2026-10) | openHAB broadcast discovery | `{"product_id":"b97e...","device_id":"78ee...","name":"Wohnzimmer","type":"AC2939","modelid":"AC2939/10","swversion":"Ms2106","option":"119"}` | openHAB forum 170501 #24 [V-forum `forum/openhab/t170501_posts.json`] |
-| **AC0950/10 "Unicorn", MCU 0.3.3, `@86`** (2026-10) | openHAB broadcast discovery | `{"product_id":"e3a1f43cfacc11ee974e06d016384e4a","device_id":"fc50a199bceb11f18844e3188138d24e","name":"Schlafzimmer","type":"Unicorn","modelid":"AC0950/10","swversion":"0.0.0","option":"119"}` | same post |
+| AC2939/10, `Ms2106` (2026-10) | openHAB broadcast discovery | `{"product_id":"<product_id F>","device_id":"<device_id D>","name":"Wohnzimmer","type":"AC2939","modelid":"AC2939/10","swversion":"Ms2106","option":"119"}` | openHAB forum 170501 #24 [V-forum `forum/openhab/t170501_posts.json`] |
+| **AC0950/10 "Unicorn", MCU 0.3.3, `@86`** (2026-10) | openHAB broadcast discovery | `{"product_id":"<product_id D>","device_id":"<device_id B>","name":"Schlafzimmer","type":"Unicorn","modelid":"AC0950/10","swversion":"0.0.0","option":"119"}` | same post |
 | AC0951/13, `@86` (2026-01) | `coap-client -m get coap://<ip>/sys/dev/info` | keys in order product_id, device_id, name, type, modelid, swversion, option; all values strings; `"modelid":"AC0951/13","swversion":"0.0.0","option":"119"` | kongo09 #300 [WF] |
 | CX7550/01, `@86` | philips-airctrl | placeholder example only (`modelid`, `name`, `device_id`) | philips-airctrl #7 [WF] |
 
 Facts that matter:
-- **`device_id` equals the status `DeviceId`** and `product_id` equals `ProductId`: the same AC0950 posted its encrypted status two posts earlier with `"ProductId":"e3a1f43cfacc11ee974e06d016384e4a","DeviceId":"fc50a199bceb11f18844e3188138d24e"` (170501 #22). [V-forum] Both integrations use `DeviceId` as unique id, so the unique id is available from the plaintext probe.
+- **`device_id` equals the status `DeviceId`** and `product_id` equals `ProductId`: the same AC0950 posted its encrypted status two posts earlier with `"ProductId":"<product_id D>","DeviceId":"<device_id B>"` (170501 #22). [V-forum] Both integrations use `DeviceId` as unique id, so the unique id is available from the plaintext probe.
 - `type` on Gen3 is the codename (same value as `D01S04`), `modelid` is the commercial model with suffix. For an AC3220/10 expect `type: "Unicorn"`, `modelid: "AC3220/10"`. [I]
 - **`swversion` is useless on Gen3** ("0.0.0" on both Unicorn samples). Firmware versions must be read from the status (`D01S12`, `WifiVersion`).
 - `option` is a bit field: "1" (2020), "119" (2026, old and new generation alike). See section 6.

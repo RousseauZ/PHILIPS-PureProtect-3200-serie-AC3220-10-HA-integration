@@ -192,7 +192,7 @@ async def test_every_outcome_of_the_form_has_a_text(hass: HomeAssistant, fake, d
     errors.add((await submit(hass, flow, "127.0.0.1"))["errors"]["base"])
     fake.silent = False
     answer_as_purifier = fake._handle_info
-    fake._handle_info = lambda msg, sender: fake._respond(msg, sender, b'{"name":"[LG] webOS TV"}')
+    fake._handle_info = lambda msg, sender: fake._respond(msg, sender, b'{"name":"Television"}')
     errors.add((await submit(hass, flow, "127.0.0.1"))["errors"]["base"])
     fake._handle_info = answer_as_purifier
 

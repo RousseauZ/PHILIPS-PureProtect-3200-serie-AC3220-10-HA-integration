@@ -161,7 +161,7 @@ Dump B verbatim (trailing alias fields added by the openHAB binding removed):
 ```json
 {"D01102":0,"D01S03":"Schlafzimmer","D01S04":"Unicorn","D01S05":"AC3210/12","D01107":0,"D01108":3,"D01109":3,
 "D0110A":0,"D0110C":19,"D01S0D":"688001001383","D0110F":3,"D01S12":"0.2.3","D01213":0,
-"ProductId":"96b12d8fb50111ee899806d016384e4a","DeviceId":"878ba852c95711f0b0ec0591d634e763","otacheck":false,
+"ProductId":"<product_id E>","DeviceId":"<device_id C>","otacheck":false,
 "Runtime":328108,"rssi":-46,"wifilog":false,"blelog":-1,"free_memory":97904,
 "WifiVersion":"AWS_Philips_AIR_Combo@86","StatusType":"status","ConnectType":"Online",
 "D03102":1,"D03103":0,"D03105":101,"D03106":1,"D0310A":2,"D0310C":0,"D0310D":1,"D03110":0,"D03211":0,
@@ -213,7 +213,7 @@ over CoAP. **Conf.** = confidence in the meaning: H, M, L.
 | `D01102` | unknown (0 on purifiers, 2 on CX3550 fan, 4 on AC3737, 5 on AMF765) | int | 0 / 0 | R | dumps. philips-airctrl says "error code" (guess, contradicted by non-zero values on healthy devices) | L |
 | `D01107`, `D0110A`, `D01213` | unknown, always 0 | int | 0 | R | dumps; library guesses "warning code", "update available", "child lock (device level)" are unsupported | L |
 | `D01108`, `D01109`, `D0110F` | unknown, 3 / 3 / 3 on every Combo device seen (`D01109` = 1 on AMF765) | int | 3 | R | dumps. UART group 02 has a similar pair for Wi-Fi LED state (`0x04` = connected), so a connection/provisioning state is plausible | L |
-| `ProductId` | Cloud product id (per model) | 32 hex | 768643a2...4e4a / 96b12d8f... | R | dumps | H |
+| `ProductId` | Cloud product id (per model) | 32 hex | <product_id A> / <product_id E> | R | dumps | H |
 | `DeviceId` | Cloud device id (per unit); the only stable per-device identifier available locally | 32 hex | per unit | R | dumps | H |
 | `WifiVersion` | Wi-Fi module firmware | string | `AWS_Philips_AIR_Combo@3.0` / `@86` | R | dumps | H |
 | `Runtime` | Uptime of the Wi-Fi module in ms (resets on reboot) | int | 317641004 / 328108 | R | dumps | H |
