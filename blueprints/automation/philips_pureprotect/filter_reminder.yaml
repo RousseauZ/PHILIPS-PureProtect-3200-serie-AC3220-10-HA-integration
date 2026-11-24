@@ -1,0 +1,37 @@
+blueprint:
+  name: Filterherinnering
+  description: >-
+    Doet iets, bijvoorbeeld een melding op je telefoon, zodra de luchtreiniger
+    vraagt om het filter te reinigen of te vervangen. Vervangt de meldingen van
+    de Air+ app, die zonder cloud niet werken.
+  domain: automation
+  source_url: https://github.com/RousseauZ/PHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration/blob/main/blueprints/automation/philips_pureprotect/filter_reminder.yaml
+  input:
+    warnings:
+      name: Filterwaarschuwingen
+      description: De waarschuwingen "Filter reinigen" en "Filter vervangen" van je luchtreiniger.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: philips_pureprotect
+              domain: binary_sensor
+    actions:
+      name: Wat er moet gebeuren
+      default:
+        - action: persistent_notification.create
+          data:
+            title: Luchtreiniger
+            message: "{{ trigger.to_state.name }}: het filter heeft onderhoud nodig."
+      selector:
+        action: {}
+
+mode: queued
+
+triggers:
+  - trigger: state
+    entity_id: !input warnings
+    from: "off"
+    to: "on"
+
+actions: !input actions

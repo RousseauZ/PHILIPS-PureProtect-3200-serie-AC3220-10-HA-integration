@@ -71,6 +71,15 @@
       }
     },
     "sensor": {
+      "air_quality": {
+        "name": "Air quality",
+        "state": {
+          "good": "Good",
+          "fair": "Fair",
+          "poor": "Poor",
+          "very_poor": "Very poor"
+        }
+      },
       "allergen_index": {
         "name": "Allergen index"
       },

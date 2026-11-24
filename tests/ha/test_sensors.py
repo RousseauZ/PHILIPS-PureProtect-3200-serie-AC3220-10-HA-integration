@@ -222,3 +222,28 @@ async def test_last_restart_moves_only_when_the_module_restarts(hass: HomeAssist
     await until(hass, lambda: dt_util.parse_datetime(state(hass, "sensor.woonkamer_last_restart")) != first)
     again = dt_util.parse_datetime(state(hass, "sensor.woonkamer_last_restart"))
     assert again is not None and abs(again - dt_util.utcnow()) < timedelta(seconds=30)
+
+
+async def test_air_quality_follows_the_colour_ring_of_the_manual(hass: HomeAssistant, fake, setup) -> None:
+    await setup()
+    entity = "sensor.woonkamer_air_quality"
+    assert hass.states.get(entity).attributes["options"] == ["good", "fair", "poor", "very_poor"]
+    # The bounds of the manual: up to 12 good, 13-35 fair, 36-55 poor, above 55 very poor.
+    for pm25, level in (
+        (0, "good"),
+        (12, "good"),
+        (13, "fair"),
+        (35, "fair"),
+        (36, "poor"),
+        (55, "poor"),
+        (56, "very_poor"),
+        (400, "very_poor"),
+    ):
+        fake.change("D03221", pm25)
+        await until(hass, lambda level=level: state(hass, entity) == level, f"PM2.5 {pm25} is not {level}")
+
+
+async def test_air_quality_is_unknown_while_the_purifier_does_not_measure(hass: HomeAssistant, fake, setup) -> None:
+    await setup()
+    fake.power_off()
+    await until(hass, lambda: state(hass, "sensor.woonkamer_air_quality") == STATE_UNKNOWN)

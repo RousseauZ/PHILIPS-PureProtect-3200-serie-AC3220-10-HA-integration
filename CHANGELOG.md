@@ -9,7 +9,10 @@ Elke versie hieronder wordt een release op GitHub zodra ze in `main` staat, en H
 - **Knoppen** "Filter gereinigd" en "Nieuw filter geplaatst".
 - **Licht** werkt zoals in de Air+ app; helderheid heeft een keuze "uit".
 - **Aanzetten in een stand** gaat in één opdracht.
+- **Luchtkwaliteit:** een sensor met de vier niveaus van de gekleurde ring (goed, redelijk, slecht, zeer slecht), volgens de grenzen in de handleiding.
+- **Blauwdrukken** voor wat de Air+ app alleen via de cloud doet: een weekschema, een melding bij slechte lucht en een filterherinnering.
 - **Sensoren** "Cloudverbinding" en "Laatst opgestart", om te zien of de luchtreiniger zonder cloud goed blijft werken.
+- **Tests op GitHub:** elke pull request draait alle tests, in Home Assistant 2026.11 en zonder.
 - **Uiterlijk:** een eigen pictogram, pictogrammen die met de toestand meewisselen, en een kant-en-klare dashboardkaart in `docs/dashboard.yaml`.
 
 ## 0.1.0

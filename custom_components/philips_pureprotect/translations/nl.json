@@ -71,6 +71,15 @@
       }
     },
     "sensor": {
+      "air_quality": {
+        "name": "Luchtkwaliteit",
+        "state": {
+          "good": "Goed",
+          "fair": "Redelijk",
+          "poor": "Slecht",
+          "very_poor": "Zeer slecht"
+        }
+      },
       "allergen_index": {
         "name": "Allergenenindex"
       },

@@ -1,0 +1,76 @@
+blueprint:
+  name: Melding bij slechte lucht
+  description: >-
+    Doet iets, bijvoorbeeld een melding op je telefoon, als de luchtkwaliteit een
+    tijd lang slechter is dan je wilt. Vervangt de meldingen van de Air+ app, die
+    zonder cloud niet werken. De niveaus zijn die van de gekleurde ring van de
+    luchtreiniger.
+  domain: automation
+  source_url: https://github.com/RousseauZ/PHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration/blob/main/blueprints/automation/philips_pureprotect/air_quality_alert.yaml
+  input:
+    air_quality:
+      name: Luchtkwaliteit
+      description: De sensor "Luchtkwaliteit" van je luchtreiniger.
+      selector:
+        entity:
+          filter:
+            - integration: philips_pureprotect
+              domain: sensor
+              device_class: enum
+    level:
+      name: Vanaf
+      default: poor
+      selector:
+        select:
+          options:
+            - label: Redelijk
+              value: fair
+            - label: Slecht
+              value: poor
+            - label: Zeer slecht
+              value: very_poor
+    minutes:
+      name: Minstens zo lang
+      default: 10
+      selector:
+        number:
+          min: 0
+          max: 240
+          unit_of_measurement: min
+    actions:
+      name: Wat er moet gebeuren
+      description: Bijvoorbeeld een melding naar je telefoon, of de luchtreiniger op Turbo zetten.
+      default:
+        - action: persistent_notification.create
+          data:
+            title: Slechte lucht
+            message: >-
+              De luchtkwaliteit is al {{ minutes }} minuten
+              {{ {'fair': 'redelijk', 'poor': 'slecht', 'very_poor': 'zeer slecht'}[trigger.to_state.state] }}.
+      selector:
+        action: {}
+
+mode: single
+
+variables:
+  levels: [good, fair, poor, very_poor]
+  level: !input level
+  minutes: !input minutes
+
+triggers:
+  - trigger: state
+    entity_id: !input air_quality
+    for:
+      minutes: !input minutes
+
+conditions:
+  # Only on the way into the chosen level or worse, not on every change above it.
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state.state in levels
+         and levels.index(trigger.to_state.state) >= levels.index(level)
+         and (trigger.from_state is none
+              or trigger.from_state.state not in levels
+              or levels.index(trigger.from_state.state) < levels.index(level)) }}
+
+actions: !input actions

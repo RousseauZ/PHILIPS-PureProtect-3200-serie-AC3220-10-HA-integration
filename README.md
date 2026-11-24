@@ -13,7 +13,7 @@ Een onafhankelijk project, niet van Philips. "Philips" en "PureProtect" zijn mer
 | Soort | Entiteiten |
 |---|---|
 | Ventilator | Aan en uit, de standen auto en slaap, vijf snelheden. Medium en turbo van het apparaat zijn hier 60% en 100%. In auto en slaap kiest het apparaat zelf de snelheid; de ventilator toont dan geen percentage. |
-| Sensoren | Fijnstof (PM2.5), allergenenindex, temperatuur, luchtvochtigheid, ventilatorsnelheid (stap 1 tot 5, ook in auto en slaap), resterende levensduur van het filter, uren tot reinigen, eindtijd van de timer, tijdstip van het laatste statusbericht |
+| Sensoren | Luchtkwaliteit (goed, redelijk, slecht, zeer slecht: de kleur van de ring), fijnstof (PM2.5), allergenenindex, temperatuur, luchtvochtigheid, ventilatorsnelheid (stap 1 tot 5, ook in auto en slaap), resterende levensduur van het filter, uren tot reinigen, eindtijd van de timer, tijdstip van het laatste statusbericht |
 | Waarschuwingen | Filter vervangen, filter reinigen, storing |
 | Schakelaars | Kinderslot, pieptoon, Auto Plus, Allergie-slaap, sensoren in stand-by, display |
 | Stand | Eén keuzelijst met alle standen van het apparaat: uit, auto, slaap, medium, turbo en snelheid 1 tot 5. Staat op de apparaatpagina onder Bediening |
@@ -76,6 +76,18 @@ Daarna: Instellingen → Apparaten en diensten → Integratie toevoegen → "Phi
 Staat de luchtreiniger tijdens het toevoegen uit, dan toont de ventilator na ongeveer tien seconden "uit" en de ventilatorsnelheid 0. De overige waarden zijn onbekend tot je hem aanzet.
 
 Nieuwe versies staan in [CHANGELOG.md](CHANGELOG.md). Elke versie wordt een release op GitHub, en HACS biedt haar aan als update.
+
+## Automatiseringen in plaats van de app
+
+Het weekschema en de meldingen van de Air+ app werken alleen via de cloud. Drie kant-en-klare automatiseringen (blauwdrukken) doen hetzelfde in Home Assistant. Klik op de knop, kies Importeren, en maak daarna een automatisering van de blauwdruk.
+
+| Blauwdruk | Wat hij doet | Importeren |
+|---|---|---|
+| Luchtreiniger op schema | Zet de luchtreiniger op gekozen dagen en tijden in een stand, en op de eindtijd uit of in een andere stand | [![Importeren](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FRousseauZ%2FPHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fphilips_pureprotect%2Fschedule.yaml) |
+| Melding bij slechte lucht | Doet iets, bijvoorbeeld een melding op je telefoon, als de luchtkwaliteit een tijd lang slechter is dan je wilt. De niveaus zijn die van de gekleurde ring | [![Importeren](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FRousseauZ%2FPHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fphilips_pureprotect%2Fair_quality_alert.yaml) |
+| Filterherinnering | Doet iets zodra de luchtreiniger vraagt om het filter te reinigen of te vervangen | [![Importeren](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FRousseauZ%2FPHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fphilips_pureprotect%2Ffilter_reminder.yaml) |
+
+Werkt de knop niet, kopieer dan de map `blueprints/automation/philips_pureprotect` naar dezelfde plek in de configuratiemap van Home Assistant.
 
 ## Dashboardkaart
 
