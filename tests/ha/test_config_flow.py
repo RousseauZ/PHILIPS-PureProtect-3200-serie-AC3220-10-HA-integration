@@ -21,8 +21,12 @@ from .conftest import until
 
 
 async def start(hass: HomeAssistant) -> Any:
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    assert result["type"] is FlowResultType.FORM and result["step_id"] == "user" and not result["errors"]
+    """Open the form for an address, the way the owner does: Add integration, then Enter the address."""
+    menu = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    assert menu["type"] is FlowResultType.MENU and menu["step_id"] == "user"
+    assert menu["menu_options"] == ["search", "manual"]
+    result = await hass.config_entries.flow.async_configure(menu["flow_id"], {"next_step_id": "manual"})
+    assert result["type"] is FlowResultType.FORM and result["step_id"] == "manual" and not result["errors"]
     return result
 
 

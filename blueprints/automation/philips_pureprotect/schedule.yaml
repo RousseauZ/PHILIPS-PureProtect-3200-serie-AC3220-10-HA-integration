@@ -1,0 +1,132 @@
+blueprint:
+  name: Luchtreiniger op schema
+  description: >-
+    Zet de luchtreiniger op vaste dagen en tijden in een stand, en op de eindtijd
+    uit of in een andere stand. Vervangt het weekschema van de Air+ app, dat
+    zonder cloud niet werkt.
+  domain: automation
+  source_url: https://github.com/RousseauZ/PHILIPS-PureProtect-3200-serie-AC3220-10-HA-integration/blob/main/blueprints/automation/philips_pureprotect/schedule.yaml
+  input:
+    mode_entity:
+      name: Stand
+      description: De keuzelijst "Stand" van je luchtreiniger.
+      selector:
+        entity:
+          filter:
+            - integration: philips_pureprotect
+              domain: select
+    days:
+      name: Dagen
+      default: [mon, tue, wed, thu, fri, sat, sun]
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Maandag
+              value: mon
+            - label: Dinsdag
+              value: tue
+            - label: Woensdag
+              value: wed
+            - label: Donderdag
+              value: thu
+            - label: Vrijdag
+              value: fri
+            - label: Zaterdag
+              value: sat
+            - label: Zondag
+              value: sun
+    start_time:
+      name: Begintijd
+      selector:
+        time: {}
+    start_mode:
+      name: Stand vanaf de begintijd
+      default: auto
+      selector:
+        select:
+          options:
+            - label: Auto
+              value: auto
+            - label: Slaap
+              value: sleep
+            - label: Medium
+              value: medium
+            - label: Turbo
+              value: turbo
+            - label: Snelheid 1
+              value: speed_1
+            - label: Snelheid 2
+              value: speed_2
+            - label: Snelheid 3
+              value: speed_3
+            - label: Snelheid 4
+              value: speed_4
+            - label: Snelheid 5
+              value: speed_5
+    end_time:
+      name: Eindtijd
+      selector:
+        time: {}
+    end_mode:
+      name: Stand vanaf de eindtijd
+      description: Kies "Uit" om hem op de eindtijd uit te zetten.
+      default: "off"
+      selector:
+        select:
+          options:
+            - label: Uit
+              value: "off"
+            - label: Auto
+              value: auto
+            - label: Slaap
+              value: sleep
+            - label: Medium
+              value: medium
+            - label: Turbo
+              value: turbo
+            - label: Snelheid 1
+              value: speed_1
+            - label: Snelheid 2
+              value: speed_2
+            - label: Snelheid 3
+              value: speed_3
+            - label: Snelheid 4
+              value: speed_4
+            - label: Snelheid 5
+              value: speed_5
+
+mode: queued
+
+triggers:
+  - trigger: time
+    at: !input start_time
+    id: start
+  - trigger: time
+    at: !input end_time
+    id: end
+
+conditions:
+  - condition: time
+    weekday: !input days
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: start
+        sequence:
+          - action: select.select_option
+            target:
+              entity_id: !input mode_entity
+            data:
+              option: !input start_mode
+      - conditions:
+          - condition: trigger
+            id: end
+        sequence:
+          - action: select.select_option
+            target:
+              entity_id: !input mode_entity
+            data:
+              option: !input end_mode

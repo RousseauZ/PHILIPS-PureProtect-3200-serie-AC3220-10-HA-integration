@@ -66,6 +66,20 @@ def _filter_life(coordinator: PureProtectCoordinator) -> StateType:
     return min(100, max(0, math.ceil(left * 100 / total)))
 
 
+# The colour ring of the purifier, by its PM2.5 reading (user manual of the
+# AC3210/AC3220/AC3221): up to 12 blue, good; 13-35 blue-purple, fair; 36-55
+# purple-red, poor; above 55 red, very poor. Each level with its upper bound.
+AIR_QUALITY_LEVELS: tuple[tuple[str, int | None], ...] = (("good", 12), ("fair", 35), ("poor", 55), ("very_poor", None))
+
+
+def _air_quality(coordinator: PureProtectCoordinator) -> StateType:
+    """Return the level the purifier's colour ring shows for its PM2.5 reading."""
+    pm25 = coordinator.value(Key.PM25)
+    if pm25 is None:
+        return None
+    return next(name for name, top in AIR_QUALITY_LEVELS if top is None or pm25 <= top)
+
+
 def _fan_speed(coordinator: PureProtectCoordinator) -> StateType:
     """Return how hard the fan runs, as a step from 1 to 5; 0 while the purifier is off."""
     if coordinator.value(Key.POWER) == 0:
@@ -81,6 +95,15 @@ SENSORS: tuple[PureProtectSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfDensity.MICROGRAMS_PER_CUBIC_METER,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=_raw(Key.PM25),
+        measured=True,
+    ),
+    PureProtectSensorDescription(
+        key="air_quality",
+        translation_key="air_quality",
+        needs=(Key.PM25,),
+        device_class=SensorDeviceClass.ENUM,
+        options=[name for name, _ in AIR_QUALITY_LEVELS],
+        value_fn=_air_quality,
         measured=True,
     ),
     PureProtectSensorDescription(

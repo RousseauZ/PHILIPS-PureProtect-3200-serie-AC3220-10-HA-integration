@@ -17,6 +17,14 @@
       }
     },
     "sensor": {
+      "air_quality": {
+        "default": "mdi:leaf",
+        "state": {
+          "fair": "mdi:weather-hazy",
+          "poor": "mdi:smog",
+          "very_poor": "mdi:alert-octagon-outline"
+        }
+      },
       "allergen_index": {
         "default": "mdi:flower-pollen"
       },

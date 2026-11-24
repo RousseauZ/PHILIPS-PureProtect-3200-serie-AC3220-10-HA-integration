@@ -44,6 +44,7 @@ UNIQUE_IDS = {
     "button.woonkamer_new_filter_fitted": "filter_replaced",
     "select.woonkamer_mode": "mode",
     "sensor.woonkamer_cloud_connection": "cloud_connection",
+    "sensor.woonkamer_air_quality": "air_quality",
     "sensor.woonkamer_last_restart": "last_restart",
 }
 
@@ -78,6 +79,7 @@ DESCRIBED = {
     "button.woonkamer_new_filter_fitted": (None, None, None, "config"),
     "select.woonkamer_mode": (None, None, None, None),
     "sensor.woonkamer_cloud_connection": (None, None, None, "diagnostic"),
+    "sensor.woonkamer_air_quality": ("enum", None, None, None),
     "sensor.woonkamer_last_restart": ("timestamp", None, None, "diagnostic"),
 }
 

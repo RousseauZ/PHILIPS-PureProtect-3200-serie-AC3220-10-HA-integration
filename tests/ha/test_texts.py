@@ -186,7 +186,8 @@ async def test_every_outcome_of_the_form_has_a_text(hass: HomeAssistant, fake, d
     errors: set[str] = set()
     aborts: set[str] = set()
 
-    flow = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    menu = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    flow = await hass.config_entries.flow.async_configure(menu["flow_id"], {"next_step_id": "manual"})
     fake.silent = True
     errors.add((await submit(hass, flow, "127.0.0.1"))["errors"]["base"])
     fake.silent = False

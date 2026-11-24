@@ -71,6 +71,7 @@ async def test_setup_creates_the_entities_of_the_device(hass: HomeAssistant, fak
         "button.woonkamer_new_filter_fitted": STATE_UNKNOWN,
         "select.woonkamer_mode": "auto",
         "sensor.woonkamer_cloud_connection": "Online",
+        "sensor.woonkamer_air_quality": "good",
         "sensor.woonkamer_last_restart": states["sensor.woonkamer_last_restart"],
     }
     # Diagnostic values that few people need exist, but are switched off.

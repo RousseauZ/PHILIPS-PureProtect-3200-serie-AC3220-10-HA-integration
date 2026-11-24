@@ -532,9 +532,9 @@ Het programma voert deze reeks uit:
 | 1 | Meetprogramma bouwen en de reeks uit 7.2 draaien | Ontwerpkeuzes vastgelegd; de kern van de protocollaag bestaat | Programma klaar. Elf metingen gedaan, zie [metingen.md](metingen.md); daar staat ook wat nog open is |
 | 2 | Protocol- en sessiepakket met nagebootst apparaat en tests | Betrouwbare verbinding, los van Home Assistant te testen | Klaar en door drie controleurs nagelopen; 157 tests. Draait tegen het echte apparaat: status binnen na 1 s, schrijfopdrachten bevestigd na 0,3 s (meting 15) |
 | 3 | Minimale integratie: instellen met IP-adres, coordinator, ventilator en sensoren | Werkend in je eigen Home Assistant | Geschreven, samen met stap 4. Door vier controleurs nagelopen, de bewezen fouten opgelost en dat onafhankelijk nagecontroleerd; 119 tests in Home Assistant 2026.11. Draait sinds 23 november 2026 in je eigen Home Assistant 2026.11.2 |
-| 4 | Overige entiteiten, diagnostiek, DHCP-herkenning, herconfiguratie, vertalingen | Volledige functionaliteit | Entiteiten, de knop "Filter gereinigd", diagnostiek, herconfiguratie en vertalingen zijn er. Nog niet: DHCP-herkenning, zoeken in het netwerk, een pictogram |
+| 4 | Overige entiteiten, diagnostiek, DHCP-herkenning, herconfiguratie, vertalingen | Volledige functionaliteit | Alles is er: entiteiten, knoppen, diagnostiek, herconfiguratie, vertalingen, een pictogram, en automatisch vinden (zoeken in het netwerk, DHCP-herkenning, en zelf opnieuw zoeken als het adres verandert) |
 | 5 | Duurtest van één tot twee weken op je eigen apparaat, met de diagnostiektellers | Aantoonbaar stabiel | Begonnen op 23 november 2026 |
-| 6 | Eerste release met installatielink; kleine verbeteringen aanbieden bij de bestaande projecten | Publiek beschikbaar | Nog niet begonnen |
+| 6 | Eerste release met installatielink; kleine verbeteringen aanbieden bij de bestaande projecten | Publiek beschikbaar | Releases met versienummer vanaf 0.2.0, via HACS als aangepaste repository. Opname in de standaardlijst van HACS: bewust niet |
 
 ---
 
@@ -569,15 +569,13 @@ Het programma voert deze reeks uit:
 | Aanzetten met een stand | De ventilator stuurt aanzetten en de stand in één opdracht; het apparaat past beide toe (meting 14) | 23 november 2026 |
 | Filter | Een knop "Filter gereinigd" die de reinigingsteller terugzet, zoals de app, en een knop "Nieuw filter geplaatst" die de levensduur op vol zet | 23 november 2026, de tweede knop op jouw verzoek om alle functies |
 | Uiterlijk | Een eigen pictogram (een torenluchtreiniger met opstijgende lucht op een groenblauw vlak, geen logo van Philips) in de map `brand/`, een kop voor HACS en GitHub, pictogrammen die met de toestand meewisselen, en een kant-en-klare dashboardkaart in `docs/dashboard.yaml`. Ontworpen in Claude Design | 23 november 2026, op jouw verzoek |
+| Cloudfuncties van de app | Het weekschema, de meldingen bij slechte lucht en de filterherinnering worden blauwdrukken voor Home Assistant-automatiseringen, met tests. De luchtkwaliteit krijgt een sensor met de niveaus van de gekleurde ring uit de handleiding | 24 november 2026 |
+| Reikwijdte | Voorlopig alleen de AC3220. Zoeken en DHCP bieden alleen die aan; een ander model kan nog met zijn adres worden toegevoegd, ongetest. De lijst staat in `SUPPORTED_MODELS` en kan later groeien | 24 november 2026 |
 | Geen cloud | Doel van de eigenaar: er gaan geen gegevens het huis uit. De luchtreiniger krijgt in de router geen internet; de integratie werkt zonder. Twee diagnosesensoren laten zien of dat houdt: "Cloudverbinding" (`ConnectType`) en "Laatst opgestart" (uit `Runtime`) | 23 november 2026 |
 | Stand | Naast de ventilator een keuzelijst "Stand" met alle standen zoals het apparaat ze noemt (uit, auto, slaap, medium, turbo, snelheid 1 tot 5), zichtbaar op de apparaatpagina. De ventilator houdt het model van Home Assistant (variant B) | 23 november 2026, na je vraag waarom de snelheid niet te vinden was |
 | Weergegeven index (`D0312A`) | Geen entiteit: het apparaat negeert de schrijfopdracht | 23 november 2026 |
 
-**Beslissingen voor jou:**
-
-| Beslissing | Opties | Mijn voorkeur |
-|---|---|---|
-| Reikwijdte | Alleen de 3200-serie, of ook de verwante 2200- en 4200-serie | Beginnen met de 3200-serie; de modeltabel zo opzetten dat de andere erbij kunnen |
+**Beslissingen voor jou:** geen open beslissingen meer.
 
 ---
 
