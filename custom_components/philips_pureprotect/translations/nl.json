@@ -53,7 +53,8 @@
       "reconfigure_successful": "Het adres is gewijzigd.",
       "wrong_device": "Op dit adres antwoordt een andere luchtreiniger. Het adres is niet gewijzigd.",
       "cannot_connect": "Het apparaat gaf geen antwoord.",
-      "not_a_purifier": "Het gevonden apparaat is geen Philips-luchtreiniger."
+      "not_a_purifier": "Het gevonden apparaat is geen Philips-luchtreiniger.",
+      "unsupported_model": "De gevonden luchtreiniger ({model}) wordt niet aangeboden: deze integratie is gemaakt en getest voor de AC3220. Je kunt hem wel met zijn adres toevoegen."
     }
   },
   "entity": {

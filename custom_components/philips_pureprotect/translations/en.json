@@ -53,7 +53,8 @@
       "reconfigure_successful": "The address has been changed.",
       "wrong_device": "Another air purifier answers at this address. The address was not changed.",
       "cannot_connect": "The device did not answer.",
-      "not_a_purifier": "The device that was found is not a Philips air purifier."
+      "not_a_purifier": "The device that was found is not a Philips air purifier.",
+      "unsupported_model": "The air purifier that was found ({model}) is not offered: this integration is made and tested for the AC3220. You can still add it by its address."
     }
   },
   "entity": {

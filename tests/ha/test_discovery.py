@@ -546,6 +546,11 @@ async def test_the_re_search_keeps_a_host_name_that_still_leads_to_the_purifier(
     """
     fake = search_finds
     quick_research(monkeypatch)
+    # Searches made while the purifier is still away find nothing and double the wait; under load that
+    # can be several before it is back. Capped here, so that the next search comes soon.
+    monkeypatch.setattr(coordinator_module, "REDISCOVER_MAX", 0.6)
+    # And each search listens long enough for an answer when the machine is busy.
+    monkeypatch.setattr("custom_components.philips_pureprotect.search.SEARCH_WAIT", 0.5)
     searches = count_searches(monkeypatch)
     monkeypatch.setattr(coordinator_module, "SESSION_OPTIONS", options(offline_backoff=(30.0,), refresh_interval=30.0))
     entry = purifier_entry(hass, fake.state["DeviceId"], "localhost", fake.port)
@@ -553,13 +558,19 @@ async def test_the_re_search_keeps_a_host_name_that_still_leads_to_the_purifier(
     await hass.async_block_till_done()
     coordinator = entry.runtime_data
     await until(hass, lambda: coordinator.session.status_is_live, "no status arrived")
-    registrations = len(fake.registrations)
+    old_port = fake.registrations[-1][0][1]
     fake.silent = True
     await until(hass, lambda: coordinator.session.state is SessionState.OFFLINE, "the purifier did not go offline")
-    # Going offline, the session opened a new socket and registered from it; that was lost too.
-    await until(hass, lambda: len(fake.registrations) > registrations, "no new registration")
+    # Going offline, the session opened a new socket and registered from it; that was lost too. Waiting for a
+    # registration from the new port, not for any registration: one sent while the session still had doubts
+    # comes from the old port, and the new one, answered once the purifier is back, would end the test's premise.
+    await until(
+        hass,
+        lambda: any(sender[1] != old_port for sender, _ in fake.registrations),
+        "no registration from a new socket",
+    )
     fake.silent = False  # back; the session probes again only after 30 s
-    await until(hass, lambda: any(found for found in searches), "the search did not find it")
+    await until(hass, lambda: any(found for found in searches), "the search did not find it", timeout=15.0)
     await hass.async_block_till_done()
     assert coordinator.session.state is SessionState.OFFLINE  # so the search did judge the address
     assert entry.data[CONF_HOST] == "localhost"
@@ -635,3 +646,24 @@ async def test_a_search_stops_when_its_entry_is_removed(
     assert infos() == sent, "the search went on after its entry was removed"
     assert not coordinator._searching
     assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
+async def test_search_offers_only_the_ac3220(hass: HomeAssistant, search_finds, default_port: int) -> None:
+    search_finds.state["D01S05"] = "AC2220/10"  # another Philips purifier with the same Wi-Fi module
+    result = await search(hass)
+    assert result["step_id"] == "manual" and result["errors"] == {"base": "no_devices_found"}
+
+
+async def test_dhcp_lets_another_philips_model_go(hass: HomeAssistant, fake, default_port: int) -> None:
+    fake.state["D01S05"] = "AC2220/10"
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_DHCP}, data=dhcp())
+    assert result["type"] is FlowResultType.ABORT and result["reason"] == "unsupported_model"
+    assert result["description_placeholders"] == {"model": "AC2220/10"}
+
+
+async def test_another_model_can_still_be_added_by_its_address(hass: HomeAssistant, fake, default_port: int) -> None:
+    fake.state["D01S05"] = "AC2220/10"
+    menu = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    form = await hass.config_entries.flow.async_configure(menu["flow_id"], {"next_step_id": "manual"})
+    result = await hass.config_entries.flow.async_configure(form["flow_id"], {CONF_HOST: "127.0.0.1"})
+    assert result["type"] is FlowResultType.CREATE_ENTRY and result["data"][CONF_MODEL] == "AC2220/10"

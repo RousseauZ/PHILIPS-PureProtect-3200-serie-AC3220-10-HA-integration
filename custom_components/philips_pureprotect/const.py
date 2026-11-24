@@ -10,6 +10,17 @@ LOGGER = logging.getLogger(__package__)
 
 MANUFACTURER: Final = "Philips"
 DEFAULT_PORT: Final = 5683
+# The models the search and DHCP offer, by the start of the model id the
+# device reports ("AC3220/10"). Measured and tested on the AC3220/10 only; a
+# purifier of another model can still be added by its address.
+SUPPORTED_MODELS: Final = ("AC3220",)
+
+
+def supported_model(model_id: str) -> bool:
+    """Return True for a model the search and DHCP offer."""
+    return model_id.strip().upper().startswith(SUPPORTED_MODELS)
+
+
 CONF_MODEL: Final = "model"
 
 STORAGE_VERSION: Final = 1

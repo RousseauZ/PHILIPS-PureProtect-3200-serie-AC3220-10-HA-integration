@@ -19,7 +19,7 @@ from homeassistant.helpers.selector import SelectOptionDict, SelectSelector, Sel
 from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from .airlink import Identity, Session, SessionOptions
-from .const import CONF_MODEL, DEFAULT_PORT, DOMAIN, LOGGER
+from .const import CONF_MODEL, DEFAULT_PORT, DOMAIN, LOGGER, supported_model
 from .coordinator import PureProtectCoordinator
 from .search import async_addresses, async_search
 
@@ -75,7 +75,8 @@ class PureProtectConfigFlow(ConfigFlow, domain=DOMAIN):
             for host, identity in found.items():
                 entry = self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, identity.device_id)
                 if entry is None or entry.source == SOURCE_IGNORE:
-                    self._found[host] = identity
+                    if supported_model(identity.model_id):
+                        self._found[host] = identity
                 elif host not in await async_addresses(self.hass, entry.data.get(CONF_HOST, "")):
                     LOGGER.info(
                         "%s answers at a new address, %s instead of %s", entry.title, host, entry.data.get(CONF_HOST)
@@ -85,7 +86,11 @@ class PureProtectConfigFlow(ConfigFlow, domain=DOMAIN):
             if not self._found:
                 if moved:
                     return self.async_abort(reason="already_configured")
-                error = "no_new_devices" if found else "no_devices_found"
+                set_up = any(
+                    self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, identity.device_id) is not None
+                    for identity in found.values()
+                )
+                error = "no_new_devices" if set_up else "no_devices_found"
                 return self.async_show_form(step_id="manual", data_schema=SCHEMA, errors={"base": error})
             options = [
                 SelectOptionDict(value=host, label=f"{_title(identity)} · {identity.model_id or '?'} · {host}")
@@ -153,6 +158,10 @@ class PureProtectConfigFlow(ConfigFlow, domain=DOMAIN):
                 self.hass.config_entries.flow.async_abort(flow["flow_id"])
         await self.async_set_unique_id(identity.device_id)
         await self._async_abort_if_set_up(host)
+        if not supported_model(identity.model_id):
+            return self.async_abort(
+                reason="unsupported_model", description_placeholders={"model": identity.model_id or "?"}
+            )
         self._discovered = (host, identity)
         self.context["title_placeholders"] = {"name": _title(identity)}
         return await self.async_step_discovery_confirm()
