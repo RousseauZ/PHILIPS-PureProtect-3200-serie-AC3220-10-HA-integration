@@ -256,7 +256,21 @@ Gevolgen:
 - Na het opzoeken houdt het apparaat de verbinding open; daarom staat er sinds 22 november niets meer in het logboek. Een blokkade in DNS verbreekt een bestaande verbinding niet: daarna moet de stekker er even uit.
 - Er is geen verzoek naar een tijdserver te zien; de tijd komt vermoedelijk uit de cloud.
 
+### Meting 19: snelheden tussen de bekende standen
 
+Op 24 november 2026, met `set`, de luchtreiniger aan en in de slaapstand (`D0310C` = 17).
+
+| Opdracht | Uitkomst |
+|---|---|
+| `D0310C=6` | `success`, maar **genegeerd**: de stand bleef 17 |
+| `D0310C=10` | `success`, maar **genegeerd** |
+| `D0310C=16` | `success`, maar **genegeerd** |
+| `D0310D=2` (het werkelijke toerental zelf schrijven) | `success`, maar **genegeerd**: bleef 1 |
+| `D0310C=0` (terug naar auto) | Teruggemeld na 0,31 s |
+
+Het apparaat kent dus alleen de standen uit meting 14. Het toerental is alleen te lezen, en dan als een van vijf trappen (1, 2, 3, 4 en de hoogste). Een exact toerental instellen kan lokaal niet; de interne verbinding tussen wifi-module en hoofdprocessor van een verwant apparaat kent ook alleen standen.
+
+### Eerste statusbericht na een nieuw abonnement, over alle metingen
 
 | Toestand | Tijd tot het eerste bericht |
 |---|---|
@@ -306,8 +320,8 @@ Doel: elke functie die het apparaat lokaal prijsgeeft, is beschikbaar in de inte
 |---|---|---|---|---|
 | Aan en uit | `D03102` | Gemeten | Gemeten | Ventilator |
 | Standen auto, slaap, medium, turbo | `D0310C` | Gemeten | Gemeten | Keuzelijst "Stand", en de ventilator: auto en slaap als stand, medium en turbo als 60% en 100% |
-| Handmatige snelheden 1 tot 5 | `D0310C` | Gemeten | Gemeten | Keuzelijst "Stand" en de ventilator |
-| Werkelijk toerental | `D0310D` | Gemeten | Alleen-lezen | Sensor "Ventilatorsnelheid" |
+| Handmatige snelheden 1 tot 5 | `D0310C` | Gemeten | Gemeten; andere waarden worden genegeerd (meting 19) | Keuzelijst "Stand" en de ventilator |
+| Werkelijk toerental | `D0310D` | Gemeten | Alleen-lezen (gemeten: schrijven wordt genegeerd) | Sensor "Ventilatorsnelheid" |
 | Kinderslot | `D03103` | Gemeten | Gemeten (alleen met het apparaat aan) | Schakelaar |
 | Allergie-slaap | `D03115` | Gemeten | Gemeten | Schakelaar |
 | Auto+ | `D03180` | Gemeten | Gemeten | Schakelaar |
