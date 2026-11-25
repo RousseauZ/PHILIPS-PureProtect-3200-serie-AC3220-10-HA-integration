@@ -1,7 +1,7 @@
 """Probeer de verbindingslaag van de integratie tegen een echte luchtreiniger, zonder Home Assistant.
 
-    python tools/session_check.py 10.10.10.113
-    python tools/session_check.py 10.10.10.113 --duur 300 --set D03103=1 --set D03103=0
+    python tools/session_check.py 192.0.2.113
+    python tools/session_check.py 192.0.2.113 --duur 300 --set D03103=1 --set D03103=0
 
 Het programma toont elke verandering van toestand en van status, voert de
 gevraagde schrijfopdrachten uit en sluit af met de tellers van de sessie.

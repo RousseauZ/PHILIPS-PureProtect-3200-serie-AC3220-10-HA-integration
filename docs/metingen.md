@@ -156,7 +156,7 @@ Vijf rondes; per ronde gingen vier info-aanvragen tegelijk uit.
 | Multicast 224.0.1.187 | 0 van 5 |
 | Rechtstreeks | 3 van 5 |
 
-Een ander apparaat in het netwerk, een LG-televisie, antwoordde ook op de broadcast en de multicast, met een antwoord zonder `modelid`, `type` of `device_id`.
+Een ander apparaat in het netwerk, een televisie, antwoordde ook op de broadcast en de multicast, met een antwoord zonder `modelid`, `type` of `device_id`.
 
 ### Meting 12: `liveness`, acht uur in de nacht
 
@@ -226,7 +226,7 @@ Alle gewijzigde instellingen zijn daarna teruggezet en bevestigd.
 | Kinderslot aan en weer uit | Beide bevestigd na 0,24 en 0,29 s, in één poging |
 | Daarna | 57 statusberichten in drie minuten, geen gemiste controle, geen weggegooid bericht, geen nieuwe socket |
 
-### Meting 16: CoAP-ping naar de LG-televisie
+### Meting 16: CoAP-ping naar de televisie
 
 0 van 10 beantwoord. De televisie antwoordt wel op een info-aanvraag via broadcast (meting 11), maar niet op een ping.
 
@@ -243,7 +243,7 @@ Eerste installatie op 23 november 2026 om 20:36.
 
 ### Meting 18: DNS-verzoeken van de luchtreiniger
 
-Uit het querylogboek van AdGuard Home, gefilterd op 10.10.10.113. Alle verzoeken vielen op 22 november tussen 19:14:02 en 19:15:18; daarna geen enkel meer tot de schermafbeelding een dag later. In het logboek zijn de namen afgekapt; wat na "…" staat, is aangevuld.
+Uit het querylog van de DNS-resolver, gefilterd op het adres van de luchtreiniger. Alle verzoeken kwamen kort na elkaar; daarna kwam er geen enkel verzoek meer bij. In het querylog zijn de namen afgekapt; wat na "…" staat, is aangevuld.
 
 | Naam | Keer | Vermoedelijke rol |
 |---|---|---|
@@ -253,10 +253,24 @@ Uit het querylogboek van AdGuard Home, gefilterd op 10.10.10.113. Alle verzoeken
 | `productionphilips.s3.amazona…` | 1 | Andere opslag van Philips op Amazon S3 |
 
 Gevolgen:
-- Na het opzoeken houdt het apparaat de verbinding open; daarom staat er sinds 22 november niets meer in het logboek. Een blokkade in DNS verbreekt een bestaande verbinding niet: daarna moet de stekker er even uit.
+- Na het opzoeken houdt het apparaat de verbinding open; daarom kwam er daarna niets meer bij in het querylog. Een blokkade in DNS verbreekt een bestaande verbinding niet: daarna moet de stekker er even uit.
 - Er is geen verzoek naar een tijdserver te zien; de tijd komt vermoedelijk uit de cloud.
 
+### Meting 19: snelheden tussen de bekende standen
 
+Op 24 november 2026, met `set`, de luchtreiniger aan en in de slaapstand (`D0310C` = 17).
+
+| Opdracht | Uitkomst |
+|---|---|
+| `D0310C=6` | `success`, maar **genegeerd**: de stand bleef 17 |
+| `D0310C=10` | `success`, maar **genegeerd** |
+| `D0310C=16` | `success`, maar **genegeerd** |
+| `D0310D=2` (het werkelijke toerental zelf schrijven) | `success`, maar **genegeerd**: bleef 1 |
+| `D0310C=0` (terug naar auto) | Teruggemeld na 0,31 s |
+
+Het apparaat kent dus alleen de standen uit meting 14. Het toerental is alleen te lezen, en dan als een van vijf trappen (1, 2, 3, 4 en de hoogste). Een exact toerental instellen kan lokaal niet; de interne verbinding tussen wifi-module en hoofdprocessor van een verwant apparaat kent ook alleen standen.
+
+### Eerste statusbericht na een nieuw abonnement, over alle metingen
 
 | Toestand | Tijd tot het eerste bericht |
 |---|---|
@@ -306,8 +320,8 @@ Doel: elke functie die het apparaat lokaal prijsgeeft, is beschikbaar in de inte
 |---|---|---|---|---|
 | Aan en uit | `D03102` | Gemeten | Gemeten | Ventilator |
 | Standen auto, slaap, medium, turbo | `D0310C` | Gemeten | Gemeten | Keuzelijst "Stand", en de ventilator: auto en slaap als stand, medium en turbo als 60% en 100% |
-| Handmatige snelheden 1 tot 5 | `D0310C` | Gemeten | Gemeten | Keuzelijst "Stand" en de ventilator |
-| Werkelijk toerental | `D0310D` | Gemeten | Alleen-lezen | Sensor "Ventilatorsnelheid" |
+| Handmatige snelheden 1 tot 5 | `D0310C` | Gemeten | Gemeten; andere waarden worden genegeerd (meting 19) | Keuzelijst "Stand" en de ventilator |
+| Werkelijk toerental | `D0310D` | Gemeten | Alleen-lezen (gemeten: schrijven wordt genegeerd) | Sensor "Ventilatorsnelheid" |
 | Kinderslot | `D03103` | Gemeten | Gemeten (alleen met het apparaat aan) | Schakelaar |
 | Allergie-slaap | `D03115` | Gemeten | Gemeten | Schakelaar |
 | Auto+ | `D03180` | Gemeten | Gemeten | Schakelaar |

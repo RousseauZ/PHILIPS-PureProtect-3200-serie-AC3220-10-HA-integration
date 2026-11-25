@@ -241,8 +241,8 @@ Assume the device answered the sync with `2170B935` (the constant used by py-air
 sync response (C0)       : 2170B935
 counter used (C0+1)      : 2170B936
 MD5("JiangPan2170B936")  : 50FDCE74B843C4B1E455FE7020569AFD
-AES-128 key (ASCII)      : "50FDCE74B843C4B1"   = 35304644434537344238343343344231
-CBC IV (ASCII)           : "E455FE7020569AFD"   = 45343535464537303230353639414644
+AES-128 key (ASCII)      : "50FDCE74B843C4B1"   = 35 30 46 44 43 45 37 34 42 38 34 33 43 34 42 31
+CBC IV (ASCII)           : "E455FE7020569AFD"   = 45 34 35 35 46 45 37 30 32 30 35 36 39 41 46 44
 plaintext (92 bytes)     : {"state": {"desired": {"CommandType": "app", "DeviceId": "", "EnduserId": "", "D03102": 1}}}
 wire payload (264 chars) :
   2170B936                                                          <- counter

@@ -344,7 +344,7 @@ def test_info_answer_without_ids_flags_another_kind_of_device(bench: Bench) -> N
         def television(msg: Message, sender: tuple[str, int]) -> None:
             nonlocal infos
             infos += 1
-            fake._respond(msg, sender, b'{"name":"[LG] webOS TV","swversion":"1.0"}')
+            fake._respond(msg, sender, b'{"name":"Television","swversion":"1.0"}')
 
         # Measured: a television answers the info request on this port,
         # without any id. It has the address now; it answers the ping and
@@ -377,7 +377,7 @@ def test_info_answer_without_ids_flags_another_kind_of_device(bench: Bench) -> N
 def test_info_answer_without_ids_is_not_an_identity(bench: Bench) -> None:
     async def body() -> None:
         fake = bench.fake
-        answers = [b'{"name":"[LG] webOS TV","swversion":"1.0"}', b"\x00\x00 not json", b"[1, 2]"]
+        answers = [b'{"name":"Television","swversion":"1.0"}', b"\x00\x00 not json", b"[1, 2]"]
 
         def other(msg: Message, sender: tuple[str, int]) -> None:
             fake._respond(msg, sender, answers[0])

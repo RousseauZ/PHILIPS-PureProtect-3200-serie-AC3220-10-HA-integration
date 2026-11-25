@@ -9,11 +9,11 @@ from airlink import discover, parse_info
 from airlink.coap import Message
 from conftest import Bench
 
-TELEVISION = b'{"name":"[LG] webOS TV","swversion":"1.0"}'
+TELEVISION = b'{"name":"Television","swversion":"1.0"}'
 
 
 class _Television(asyncio.DatagramProtocol):
-    """Answers every request on the CoAP port, without ids (measured: an LG television, measurement 11)."""
+    """Answers every request on the CoAP port, without ids (measured: a television, measurement 11)."""
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         self.transport: Any = transport

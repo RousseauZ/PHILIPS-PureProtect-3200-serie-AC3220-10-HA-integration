@@ -189,7 +189,7 @@ From issue #181 "Support for AC3220/AC3221" (tomasz-soltysik, 2024-11-04), devic
 ```json
 {"D01102":0,"D01S03":"Salon","D01S04":"Unicorn","D01S05":"AC3220/10","D01107":0,"D01108":3,"D01109":3,
  "D0110A":0,"D0110C":19,"D01S0D":"688001001384","D0110F":3,"D01S12":"0.1.9","D01213":0,
- "ProductId":"768643a2b11811ee88c206d016384e4a","DeviceId":"3924e2d9962b11efa71c0d1d273d48dd",
+ "ProductId":"<product_id A>","DeviceId":"<device_id A>",
  "otacheck":false,"Runtime":317641004,"rssi":-49,"wifilog":false,"blelog":false,"free_memory":154416,
  "WifiVersion":"AWS_Philips_AIR_Combo@3.0","StatusType":"status","ConnectType":"Online",
  "D03102":1,"D03103":0,"D03105":0,"D03106":1,"D0310A":2,"D0310C":0,"D0310D":1,"D03110":0,"D03211":0,
